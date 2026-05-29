@@ -41,7 +41,8 @@ class Config:
         self.og_smpl_model_path = self.root_dir / "src/imuposer/smpl/basicmodel_m_lbs_10_207_0_v1.0.0_np.pkl"
         
         self.raw_dip_path = self.root_dir / "data/raw/DIP_IMU"
-        self.raw_amass_path = self.root_dir / "data/raw/AMASS"
+        # AMASS data lives alongside the project (../data relative to the repo root)
+        self.raw_amass_path = (self.root_dir / ".." / "data").resolve()
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
@@ -136,7 +137,9 @@ pred_joints_set = {
 amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU',
                   'DanceDB', 'DFaust_67', 'EKUT', 'Eyes_Japan_Dataset', 'HUMAN4D',
                   'HumanEva', 'KIT', 'MPI_HDM05', 'MPI_Limits', 'MPI_mosh', 'SFU',
-                  'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap']
+                  'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap',
+                  # newer AMASS "stageii" releases (different file suffix / nesting / fps)
+                  'GRAB', 'SOMA', 'WEIZMANN', 'MOYO', 'LARa']
 
 leaf_joints = [20, 21, 7, 8, 12]
 
