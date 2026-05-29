@@ -4,7 +4,7 @@ Dataset util functions
 
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 from imuposer.datasets import *

@@ -39,16 +39,23 @@ git clone https://github.com/FIGLAB/IMUPoser.git
 ```
  
 ## 2. Create a virtual environment
-We recommend using conda. Tested on `Ubuntu 18.04`, with `python 3.7`.
+We use [uv](https://docs.astral.sh/uv/) to manage the environment and dependencies (including PyTorch). Requires `python >= 3.10`.
 
+Install uv if you don't have it:
 ```bash
-conda create -n "imuposer" python=3.7
-conda activate imuposer
-conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=10.2 -c pytorch
-
-python -m pip install -r requirements.txt
-python -m pip install -e src/
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+Then create the environment and install everything (the `imuposer` package and all dependencies) in one step:
+```bash
+uv sync
+```
+
+Run any command inside the environment with `uv run`, e.g.:
+```bash
+uv run python "scripts/2. Train/1. Train Global Model.py"
+```
+or activate the virtual environment directly with `source .venv/bin/activate`.
 
 ## 3. Download training data
 1. Download training data from [AMASS](https://amass.is.tue.mpg.de/index.html) and [DIP-IMU](https://dip.is.tuebingen.mpg.de/) and place in the data folder as shown below after unzipping. We use the SMPLH+G version of the AMASS dataset. Note that AMASS has been updated since our paper was published, so use the latest version for best results.

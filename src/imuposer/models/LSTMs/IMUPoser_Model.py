@@ -4,7 +4,7 @@ IMUPoser Model
 
 import torch.nn as nn
 import torch
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 from .RNN import RNN
 from imuposer.models.loss_functions import *
 from imuposer.smpl.parametricModel import ParametricModel
@@ -40,7 +40,14 @@ class IMUPoserModel(pl.LightningModule):
             self.loss = nn.L1Loss()
 
         self.lr = 3e-4
-        self.save_hyperparameters()
+
+        # PyTorch Lightning >= 2.0 removed the `outputs` argument from the epoch-end
+        # hooks, so we accumulate per-step losses ourselves.
+        self.training_step_outputs = []
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
+
+        self.save_hyperparameters(ignore=["config"])
 
     def forward(self, imu_inputs, imu_lens):
         pred_pose, _, _ = self.dip_model(imu_inputs, imu_lens)
@@ -63,6 +70,9 @@ class IMUPoserModel(pl.LightningModule):
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
 
+        # store the scalar value (float), NOT the tensor: accumulating per-step CUDA
+        # tensors here pins ~one graph's worth of GPU memory per step and OOMs.
+        self.training_step_outputs.append(loss.item())
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
@@ -82,6 +92,7 @@ class IMUPoserModel(pl.LightningModule):
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
 
+        self.validation_step_outputs.append(loss.item())
         return {"loss": loss}
 
     def predict_step(self, batch, batch_idx):
@@ -101,22 +112,24 @@ class IMUPoserModel(pl.LightningModule):
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
 
-    def training_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="train")
+    def on_train_epoch_end(self):
+        self.epoch_end_callback(self.training_step_outputs, loop_type="train")
+        self.training_step_outputs.clear()
 
-    def validation_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="val")
+    def on_validation_epoch_end(self):
+        self.epoch_end_callback(self.validation_step_outputs, loop_type="val")
+        self.validation_step_outputs.clear()
 
-    def test_epoch_end(self, outputs):
-        self.epoch_end_callback(outputs, loop_type="test")
+    def on_test_epoch_end(self):
+        self.epoch_end_callback(self.test_step_outputs, loop_type="test")
+        self.test_step_outputs.clear()
 
     def epoch_end_callback(self, outputs, loop_type="train"):
-        loss = []
-        for output in outputs:
-            loss.append(output["loss"])
+        if len(outputs) == 0:
+            return
 
-        # agg the losses
-        avg_loss = torch.mean(torch.Tensor(loss))
+        # agg the losses (outputs are plain floats)
+        avg_loss = sum(outputs) / len(outputs)
         self.log(f"{loop_type}_loss", avg_loss, prog_bar=True, batch_size=self.batch_size)
 
     def configure_optimizers(self):

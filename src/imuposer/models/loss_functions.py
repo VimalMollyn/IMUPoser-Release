@@ -1,5 +1,5 @@
 import torch
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 
 class weighted_mse(pl.LightningModule):
     def __init__(self, weights=torch.ones((216))):

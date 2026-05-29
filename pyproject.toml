@@ -1,0 +1,38 @@
+[project]
+name = "imuposer"
+version = "1.1"
+description = "IMUPoser: Full-Body Pose Estimation using IMUs in Phones, Watches, and Earbuds (CHI 2023)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "lightning",
+    "tqdm",
+    "matplotlib",
+    "numpy",
+    "opencv-python",
+    "scipy",
+    "wandb",
+    "dotmap",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/imuposer"]
+
+# Install PyTorch built for CUDA 12.4 (matches the NVIDIA 550.x driver / CUDA 12.4 on this machine).
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }

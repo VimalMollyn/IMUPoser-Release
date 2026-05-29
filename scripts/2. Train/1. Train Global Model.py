@@ -3,11 +3,15 @@
 # %autoreload 2
 
 # %%
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning import seed_everything
+import os
+# Variable-length sequence batches fragment the CUDA caching allocator's reserved pool;
+# expandable segments keep reserved memory bounded. Set before torch initializes CUDA.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
+import lightning.pytorch as pl
+from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch import seed_everything
 
 from imuposer.config import Config, amass_combos
 from imuposer.models.utils import get_model
@@ -35,7 +39,7 @@ datamodule = get_datamodule(config)
 checkpoint_path = config.checkpoint_path 
 
 # %%
-wandb_logger = WandbLogger(project=config.experiment, save_dir=checkpoint_path)
+wandb_logger = WandbLogger(project=config.experiment, save_dir=str(checkpoint_path))
 
 early_stopping_callback = EarlyStopping(monitor="validation_step_loss", mode="min", verbose=False,
                                         min_delta=0.00001, patience=5)
@@ -43,8 +47,11 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
                                       save_top_k=5, dirpath=checkpoint_path, save_weights_only=True, 
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
+# NOTE: deterministic="warn" (not True): the bidirectional CuDNN LSTM backward has no
+# deterministic implementation, so deterministic=True raises at the first backward pass.
+# "warn" keeps the seeded run reproducible where possible and only warns on those ops.
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=1000, accelerator="gpu", devices=[0],
-                     callbacks=[early_stopping_callback, checkpoint_callback], deterministic=True)
+                     callbacks=[early_stopping_callback, checkpoint_callback], deterministic="warn")
 
 # %%
 trainer.fit(model, datamodule=datamodule)
