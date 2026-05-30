@@ -52,6 +52,8 @@ def to_25fps(config):
 
     # process AMASS first
     for fpath in (config.processed_imu_poser / "AMASS").iterdir():
+        if (path_to_save / f"{fpath.name}.pt").exists():
+            continue  # already converted (resumable / avoids redoing on a DIP-only re-run)
         # resample to 25 fps
         joint = [_resample(x, target_fps) for x in torch.load(fpath / "joint.pt")]
         pose = [math.axis_angle_to_rotation_matrix(_resample(x, target_fps).contiguous()).view(-1, 24, 3, 3) for x in torch.load(fpath / "pose.pt")]
@@ -81,6 +83,8 @@ def to_25fps(config):
         print(f"No DIP_IMU at {dip_dir}, skipping DIP resampling")
         return
     for fpath in dip_dir.iterdir():
+        if (path_to_save / f"dip_{fpath.name}.pt").exists():
+            continue
         # resample to 25 fps
         joint = [_resample(x, target_fps) for x in torch.load(fpath / "joint.pt")]
         pose = [math.axis_angle_to_rotation_matrix(_resample(x, target_fps).contiguous()).view(-1, 24, 3, 3) for x in torch.load(fpath / "pose.pt")]

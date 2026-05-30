@@ -12,20 +12,31 @@ class GlobalModelDataset(Dataset):
     combo masking is applied lazily in ``__getitem__`` instead of being materialized up
     front. ``idx`` maps to ``(window_idx, combo_idx)`` via integer div/mod.
     """
-    def __init__(self, split="train", config:Config=None):
+    def __init__(self, split="train", config:Config=None, data_files=None):
         super().__init__()
 
         # load the data
         self.train = split
         self.config = config
         self.combos = list(amass_combos.values())
+        # explicit list of .pt filenames to load (used to keep validation drawn
+        # only from the original datasets); None -> auto-discover all non-dip files
+        self.data_files = data_files
         self.data = self.load_data()
 
     def load_data(self):
-        if self.train == "train":
-            data_files = [x.name for x in self.config.processed_imu_poser_25fps.iterdir() if "dip" not in x.name]
+        # an explicit file list (the canonical split) always wins; otherwise fall
+        # back to auto-discovery (all non-dip for train, dip_test for test)
+        if self.data_files is not None:
+            data_files = list(self.data_files)
+        elif self.train == "train":
+            data_files = sorted(x.name for x in self.config.processed_imu_poser_25fps.iterdir() if "dip" not in x.name)
         else:
             data_files = ["dip_test.pt"]
+
+        # silently skip any requested file that isn't present (e.g. dip_test.pt
+        # when DIP-IMU hasn't been regenerated yet)
+        data_files = [f for f in data_files if (self.config.processed_imu_poser_25fps / f).exists()]
 
         # base windows, stored once (combo masking happens lazily in __getitem__)
         acc_windows = []

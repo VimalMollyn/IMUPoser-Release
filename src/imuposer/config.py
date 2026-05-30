@@ -40,9 +40,9 @@ class Config:
         self.smpl_model_path = self.root_dir / "src/imuposer/smpl/model.pkl"
         self.og_smpl_model_path = self.root_dir / "src/imuposer/smpl/basicmodel_m_lbs_10_207_0_v1.0.0_np.pkl"
         
-        self.raw_dip_path = self.root_dir / "data/raw/DIP_IMU"
-        # AMASS data lives alongside the project (../data relative to the repo root)
+        # raw data lives alongside the project (../data relative to the repo root)
         self.raw_amass_path = (self.root_dir / ".." / "data").resolve()
+        self.raw_dip_path = self.raw_amass_path / "DIP_IMU"
 
         self.processed_imu_poser = self.root_dir / "data/processed_imuposer"
         self.processed_imu_poser_25fps = self.root_dir / "data/processed_imuposer_25fps"
@@ -140,6 +140,14 @@ amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU
                   'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap',
                   # newer AMASS "stageii" releases (different file suffix / nesting / fps)
                   'GRAB', 'SOMA', 'WEIZMANN', 'MOYO', 'LARa']
+
+# === Canonical dataset-level split (FIXED for all experiments) ===
+# Whole datasets are assigned to exactly one of train / val / test, so a dataset
+# used for validation or test is NEVER seen during training. TRAIN is every other
+# non-dip 25fps file (the remaining AMASS datasets + the 5 newer AMASS datasets +
+# the Motion-X subsets). Keep these lists frozen so every run uses the same split.
+val_datasets  = ['MPI_HDM05', 'ACCAD']
+test_datasets = ['TotalCapture']   # held-out AMASS; DIP-IMU (s_09, s_10) is added on top
 
 leaf_joints = [20, 21, 7, 8, 12]
 

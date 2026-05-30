@@ -8,6 +8,7 @@ import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 from imuposer.datasets import *
+from imuposer.config import val_datasets, test_datasets
 
 def train_val_split(dataset, train_pct):
     # get the train and val split
@@ -16,32 +17,49 @@ def train_val_split(dataset, train_pct):
     val_size = total_size - train_size
     return train_size, val_size
 
+def get_split_files(config):
+    r"""
+    Resolve the canonical dataset-level split into lists of 25fps .pt filenames.
+
+    Whole datasets are assigned to exactly one split; a dataset used for val/test
+    is never in train. Test = held-out AMASS (config.test_datasets) + DIP-IMU.
+    """
+    all_files = sorted(x.name for x in config.processed_imu_poser_25fps.iterdir()
+                       if x.name.endswith(".pt") and "dip" not in x.name)
+    val_set, test_set = set(val_datasets), set(test_datasets)
+
+    val_files = [f for f in all_files if f[:-len(".pt")] in val_set]
+    test_files = [f for f in all_files if f[:-len(".pt")] in test_set] + ["dip_test.pt"]
+    train_files = [f for f in all_files if f[:-len(".pt")] not in val_set and f[:-len(".pt")] not in test_set]
+    return train_files, val_files, test_files
+
 def get_dataset(config=None, test_only=False):
     model = config.model
     # load the dataset
     if model == "GlobalModelIMUPoser":
-        if not test_only:
-            train_dataset = GlobalModelDataset("train", config)
-        test_dataset = GlobalModelDataset("test", config)
+        train_files, val_files, test_files = get_split_files(config)
+
+        test_dataset = GlobalModelDataset("test", config, data_files=test_files)
+        if test_only:
+            return test_dataset
+
+        train_dataset = GlobalModelDataset("train", config, data_files=train_files)
+        val_dataset = GlobalModelDataset("train", config, data_files=val_files)
+        return train_dataset, test_dataset, val_dataset
+
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         if not test_only:
             train_dataset = GlobalModelDatasetFineTuneDIP("train", config)
         test_dataset = GlobalModelDatasetFineTuneDIP("test", config)
+        if test_only:
+            return test_dataset
+        train_size, val_size = train_val_split(train_dataset, train_pct=config.train_pct)
+        train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
+        return train_dataset, test_dataset, val_dataset
+
     else:
         print("Enter a valid model")
         return
-
-    if not test_only:
-        # get the train and val split
-        train_size, val_size = train_val_split(train_dataset, train_pct=config.train_pct)
-
-        # split the dataset
-        train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
-
-    if not test_only:
-        return train_dataset, test_dataset, val_dataset
-    else:
-        return test_dataset
 
 def get_datamodule(config):
     model = config.model

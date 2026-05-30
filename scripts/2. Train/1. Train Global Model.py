@@ -13,9 +13,11 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch import seed_everything
 
+from pathlib import Path
+
 from imuposer.config import Config, amass_combos
 from imuposer.models.utils import get_model
-from imuposer.datasets.utils import get_datamodule
+from imuposer.datasets.utils import get_datamodule, get_split_files
 from imuposer.utils import get_parser
 
 # set the random seed
@@ -30,7 +32,19 @@ _experiment = args.experiment
 # %%
 config = Config(experiment=f"{_experiment}_{combo_id}", model="GlobalModelIMUPoser",
                 project_root_dir="../../", joints_set=amass_combos[combo_id], normalize="no_translation",
-                r6d=True, loss_type="mse", use_joint_loss=True, device="0") 
+                r6d=True, loss_type="mse", use_joint_loss=True, device="0")
+
+# read the synthesized data from the external folder (override with IMUPOSER_DATA_DIR).
+# The canonical dataset-level split (config.val_datasets / config.test_datasets) is
+# applied automatically by get_datamodule -> get_dataset.
+config.processed_imu_poser_25fps = Path(os.environ.get(
+    "IMUPOSER_DATA_DIR", "/media/vimal/T7_2TB/CHI23/processed_imuposer_data")) / "processed_imuposer_25fps"
+
+train_files, val_files, test_files = get_split_files(config)
+print(f"data: {config.processed_imu_poser_25fps}", flush=True)
+print(f"TRAIN ({len(train_files)}): {sorted(f[:-3] for f in train_files)}", flush=True)
+print(f"VAL   ({len(val_files)}): {sorted(f[:-3] for f in val_files)}", flush=True)
+print(f"TEST  ({len(test_files)}): {test_files}", flush=True)
 
 # %%
 # instantiate model and data
@@ -39,7 +53,8 @@ datamodule = get_datamodule(config)
 checkpoint_path = config.checkpoint_path 
 
 # %%
-wandb_logger = WandbLogger(project=config.experiment, save_dir=str(checkpoint_path))
+wandb_logger = WandbLogger(project=config.experiment, name=os.environ.get("WANDB_RUN_NAME"),
+                           save_dir=str(checkpoint_path))
 
 early_stopping_callback = EarlyStopping(monitor="validation_step_loss", mode="min", verbose=False,
                                         min_delta=0.00001, patience=5)
