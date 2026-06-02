@@ -44,6 +44,13 @@ def get_split_files(config):
     if getattr(config, "original_train_only", False):
         orig = set(original_amass_datasets)
         train_files = [f for f in train_files if f[:-len(".pt")] in orig]
+
+    # TRAIN_DATASETS env: restrict training to an explicit curated set of dataset
+    # names (e.g. only DIP-relevant everyday/locomotion motion). Comma-separated.
+    _train_only = os.environ.get("TRAIN_DATASETS")
+    if _train_only:
+        keep = set(_train_only.split(","))
+        train_files = [f for f in train_files if f[:-len(".pt")] in keep]
     return train_files, val_files, test_files
 
 def get_dataset(config=None, test_only=False):

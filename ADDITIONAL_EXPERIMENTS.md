@@ -131,6 +131,21 @@ baseline. Targets exist in the data (the dataset already has all 6/5 sensors bef
 expose the unmasked sensors as the reconstruction target). Pairs naturally with the staged-pose idea
 above (IMU-completion → joint positions → pose).
 
+### Curate training datasets to DIP-relevant daily activities
+**Why:** Our 29 training datasets include a lot of motion that's **off-distribution from DIP**, which
+is mostly everyday/locomotion + arm motion (walking, jogging, jumping jacks, arm raises, reaching,
+sitting, etc.). Datasets like Motion-X dance/`kungfu`/`music`/`perform`, MOYO (yoga), GRAB (object
+grasping), DanceDB, SOMA are exotic motions DIP never contains. We already saw extra (orthogonal)
+data didn't help — actively *removing* off-distribution data may help (less distribution shift) and
+also trains far faster (drops Motion-X `idea400`'s 12k seqs etc.).
+
+**Experiment:** train on a curated **everyday/locomotion** subset and compare DIP val SIP to the
+full 29-set run. Implemented via `TRAIN_DATASETS=<comma list>` (restricts train to those datasets;
+val/test unchanged). Proposed keep-list (classic everyday/locomotion mocap):
+`CMU, BioMotionLab_NTroje, BMLmovi, KIT, EKUT, Transitions_mocap, HumanEva, SFU, HUMAN4D, SSM_synced,
+MPI_mosh, MPI_Limits` — dropping Motion-X (all), MOYO, GRAB, DanceDB, SOMA, WEIZMANN, LARa. Sweep
+variants (e.g. + each questionable set) to see which motion families actually help DIP.
+
 ## Parked (lower priority)
 
 ### Learning curve on the original data (data-saturation check)
