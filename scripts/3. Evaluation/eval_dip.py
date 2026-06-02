@@ -59,8 +59,17 @@ def main():
     bm = ParametricModel(config.og_smpl_model_path, device=dev)
     I3 = torch.eye(3, device=dev)
 
+    # Infer the architecture from the checkpoint's parameter names so the right model is
+    # built before loading. This only affects which nn.Module is instantiated; the metric
+    # computation below (and the protected forward(...)[:, :, :144] pose contract) is
+    # identical for every architecture.
+    sd = torch.load(args.checkpoint, map_location=dev, weights_only=False)["state_dict"]
+    if any(k.startswith("recon_rnn.") for k in sd):
+        config.model = "ReconIMUPoser"
+    elif any(k.startswith("joint_rnn.") for k in sd):
+        config.model = "StagedIMUPoser"
     model = get_model(config)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=dev, weights_only=False)["state_dict"])
+    model.load_state_dict(sd)
     model.eval().to(dev)
 
     def metrics(pred_rot, gt_rot):

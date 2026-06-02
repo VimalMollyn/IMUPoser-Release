@@ -34,9 +34,17 @@ _experiment = args.experiment
 gpus = [int(g) for g in os.environ.get("GPUS", "0").split(",") if g != ""]
 
 # %%
-config = Config(experiment=f"{_experiment}_{combo_id}", model="GlobalModelIMUPoser",
+# MODEL selects the architecture: GlobalModelIMUPoser (default), ReconIMUPoser
+# (reconstruct full 5-IMU as an aux stage), or StagedIMUPoser (IMU->joints->pose).
+_model = os.environ.get("MODEL", "GlobalModelIMUPoser")
+config = Config(experiment=f"{_experiment}_{combo_id}", model=_model,
                 project_root_dir="../../", joints_set=amass_combos[combo_id], normalize="no_translation",
                 r6d=True, loss_type="mse", use_joint_loss=True, device=str(gpus[0]))
+
+# AUX_TARGET appends an auxiliary supervision target to each sample's output:
+#   "imu"   -> full clean 5-IMU (ReconIMUPoser)
+#   "joint" -> root-relative 24-joint positions (StagedIMUPoser)
+config.aux_target = os.environ.get("AUX_TARGET")
 
 # Under DDP each rank uses `batch_size` and gradients are averaged across ranks,
 # so split the per-GPU batch to keep the EFFECTIVE batch size constant (=256).

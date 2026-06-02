@@ -61,6 +61,8 @@ class GlobalModelDataset(Dataset):
         acc_windows = []
         ori_windows = []
         pose_windows = []
+        joint_windows = []
+        need_joint = getattr(self.config, "aux_target", None) == "joint"
 
         window_length = self.config.max_sample_len * 25 // 60
 
@@ -87,10 +89,13 @@ class GlobalModelDataset(Dataset):
                 acc_windows.extend(torch.split(acc, window_length))
                 ori_windows.extend(torch.split(ori, window_length))
                 pose_windows.extend(torch.split(fpose, window_length))
+                if need_joint:
+                    joint_windows.extend(torch.split(fdata["joint"][i].view(-1, 24, 3), window_length))
 
         self.acc_windows = acc_windows
         self.ori_windows = ori_windows
         self.pose_windows = pose_windows
+        self.joint_windows = joint_windows
         self.num_windows = len(pose_windows)
         self.num_combos = len(self.combos)
 
@@ -136,6 +141,18 @@ class GlobalModelDataset(Dataset):
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
         else:
             _output = _pose
+
+        # auxiliary target, appended AFTER the pose target (sliced back out by the
+        # staged/recon models). Pose stays first so eval_dip.py [...,:144] is unaffected.
+        aux = getattr(self.config, "aux_target", None)
+        if aux == "imu":
+            # full CLEAN 5-IMU set (reconstruct the absent sensors + denoise present)
+            full_imu = torch.cat([acc.flatten(1), ori.flatten(1)], dim=1).float()
+            _output = torch.cat([_output, full_imu], dim=1)
+        elif aux == "joint":
+            jp = self.joint_windows[window_idx].float()        # W, 24, 3
+            jp = (jp - jp[:, :1]).reshape(jp.shape[0], -1)      # root-relative, W, 72
+            _output = torch.cat([_output, jp], dim=1)
 
         return _input, _output
 

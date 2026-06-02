@@ -7,6 +7,10 @@ def get_model(config=None, pretrained=None):
     # load the dataset
     if model == "GlobalModelIMUPoser":
         net = IMUPoserModel(config=config)
+    elif model == "ReconIMUPoser":
+        net = ReconIMUPoserModel(config=config)
+    elif model == "StagedIMUPoser":
+        net = StagedIMUPoserModel(config=config)
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
     else:

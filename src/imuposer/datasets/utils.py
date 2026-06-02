@@ -55,8 +55,9 @@ def get_split_files(config):
 
 def get_dataset(config=None, test_only=False):
     model = config.model
-    # load the dataset
-    if model == "GlobalModelIMUPoser":
+    # load the dataset (Recon/Staged share the same GlobalModelDataset; they only
+    # differ in the auxiliary target appended via config.aux_target)
+    if model in ("GlobalModelIMUPoser", "ReconIMUPoser", "StagedIMUPoser"):
         train_files, val_files, test_files = get_split_files(config)
 
         test_dataset = GlobalModelDataset("test", config, data_files=test_files)
@@ -85,7 +86,7 @@ def get_dataset(config=None, test_only=False):
 def get_datamodule(config):
     model = config.model
     # load the dataset
-    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP"]:
+    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "ReconIMUPoser", "StagedIMUPoser"]:
         return IMUPoserDataModule(config)
     else:
         print("Enter a valid model")
