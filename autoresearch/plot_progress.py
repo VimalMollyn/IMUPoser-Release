@@ -11,6 +11,7 @@ Writes `autoresearch/progress.png`.
   uv run python autoresearch/plot_progress.py
 """
 import json
+from datetime import datetime
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
@@ -45,6 +46,7 @@ def main():
     x = [r["exp"] for r in rows]
     y = [metric(r) for r in rows]
     kept = [r.get("kept", False) for r in rows]
+    names = [r.get("name", "") for r in rows]
     unit = "SIP error (deg)" if all("sip" in r for r in rows) else "val metric"
 
     # best-so-far (cumulative min)
@@ -61,6 +63,13 @@ def main():
                c="0.6", s=24, zorder=2, label="discarded")
     ax.step(x, best, where="post", color="tab:blue", lw=2, zorder=4, label="best so far")
 
+    # label each experiment with its name (exp#: name), alternating above/below to reduce overlap
+    yr = (max(y) - min(y)) or 1.0
+    for i, (xi, yi, nm) in enumerate(zip(x, y, names)):
+        dy = 0.04 * yr if i % 2 == 0 else -0.06 * yr
+        ax.annotate(f"{xi}:{nm}", (xi, yi), xytext=(xi, yi + dy), fontsize=7,
+                    ha="center", color="0.25", rotation=20)
+
     b0, bN = best[0], best[-1]
     ax.set_title(f"IMUPoser AutoResearch — lw_rp_h, AMASS-only → DIP-train val\n"
                  f"{len(rows)} experiments | best {unit} {bN:.3f} (from {b0:.3f}, "
@@ -69,7 +78,11 @@ def main():
     ax.set_ylabel(f"{unit} on DIP-train val (lw_rp_h)  ↓")
     ax.grid(alpha=0.3)
     ax.legend(loc="upper right")
-    fig.tight_layout()
+    last_ts = rows[-1].get("ts", "")
+    fig.text(0.99, 0.01, f"generated {datetime.now():%Y-%m-%d %H:%M}"
+             + (f" · last run {last_ts}" if last_ts else ""),
+             ha="right", va="bottom", fontsize=7, color="0.5")
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(OUT, dpi=130)
     print(f"saved {OUT}  ({len(rows)} experiments, best={bN:.4f})")
 

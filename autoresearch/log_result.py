@@ -8,6 +8,7 @@ one record to results.jsonl. Uses the protected evaluator code, pointed at the *
       --dir checkpoints/autoresearch/exp2_calib_rot --kept --commit 0338d2d
 """
 import argparse, json, subprocess, sys
+from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -54,7 +55,7 @@ def main():
            "val_loss": (round(valloss, 5) if valloss is not None else None),
            "ckpt": ckpt.name, "sip": float(sip), "angle": float(angle),
            "joint_cm": float(joint), "vert_cm": float(vert), "localang": float(localang),
-           "note": args.note}
+           "ts": datetime.now().strftime("%Y-%m-%d %H:%M"), "note": args.note}
     with open(RESULTS, "a") as f:
         f.write(json.dumps(rec) + "\n")
     print("logged:", json.dumps(rec))
