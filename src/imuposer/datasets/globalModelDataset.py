@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.utils.data import Dataset
 from imuposer import math
@@ -25,6 +26,12 @@ class GlobalModelDataset(Dataset):
         # explicit list of .pt filenames to load (used to keep validation drawn
         # only from the original datasets); None -> auto-discover all non-dip files
         self.data_files = data_files
+        # IMU input augmentation (domain randomization) — applied ONLY to the present
+        # sensors, ONLY when self.augment is set (get_dataset turns it on for the train
+        # set, never val/test). Magnitudes from env so experiments can sweep them.
+        self.augment = False
+        self.aug_acc_std = float(os.environ.get("AUG_ACC_STD", "0"))
+        self.aug_ori_std = float(os.environ.get("AUG_ORI_STD", "0"))
         self.data = self.load_data()
 
     def load_data(self):
@@ -90,6 +97,13 @@ class GlobalModelDataset(Dataset):
         _combo_ori = torch.zeros_like(ori)
         _combo_acc[:, combo] = acc[:, combo]
         _combo_ori[:, combo] = ori[:, combo]
+
+        # domain randomization: perturb the PRESENT sensors only (absent stay zero)
+        if self.augment:
+            if self.aug_acc_std > 0:
+                _combo_acc[:, combo] += torch.randn_like(_combo_acc[:, combo]) * self.aug_acc_std
+            if self.aug_ori_std > 0:
+                _combo_ori[:, combo] += torch.randn_like(_combo_ori[:, combo]) * self.aug_ori_std
 
         _input = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1).float()
 

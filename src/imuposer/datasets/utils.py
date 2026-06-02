@@ -2,6 +2,7 @@ r"""
 Dataset util functions
 """
 
+import os
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
@@ -32,6 +33,12 @@ def get_split_files(config):
     test_files = [f for f in all_files if f[:-len(".pt")] in test_set] + ["dip_test.pt"]
     train_files = [f for f in all_files if f[:-len(".pt")] not in val_set and f[:-len(".pt")] not in test_set]
 
+    # VAL_FILES env override: validate on explicit file(s), e.g. real DIP for the autoresearch
+    # loop (VAL_FILES=dip_train.pt). Selection-only — these are never added to train_files.
+    _val_override = os.environ.get("VAL_FILES")
+    if _val_override:
+        val_files = [v if v.endswith(".pt") else v + ".pt" for v in _val_override.split(",")]
+
     # original-data-only ablation: drop the 5 newer AMASS datasets + Motion-X from
     # training (val/test are unchanged so the comparison stays controlled)
     if getattr(config, "original_train_only", False):
@@ -50,6 +57,7 @@ def get_dataset(config=None, test_only=False):
             return test_dataset
 
         train_dataset = GlobalModelDataset("train", config, data_files=train_files)
+        train_dataset.augment = True   # domain randomization on TRAIN only (val/test stay clean)
         val_dataset = GlobalModelDataset("train", config, data_files=val_files)
         return train_dataset, test_dataset, val_dataset
 
