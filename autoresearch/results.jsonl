@@ -1,6 +1,8 @@
-{"exp": 0, "name": "baseline", "commit": "16d0eda", "kept": true, "sip": 32.5, "angle": 28.45, "joint_cm": 12.31, "vert_cm": 15.41, "localang": 12.04, "ts": "2026-06-02 07:30", "note": "no aug, final@30"}
-{"exp": 1, "name": "domain_rand_n", "commit": "0338d2d", "kept": true, "sip": 29.98, "angle": 25.49, "joint_cm": 11.71, "vert_cm": 14.13, "localang": 12.02, "ts": "2026-06-02 05:10", "note": "accel/ori input noise"}
-{"exp": 2, "name": "calib_3.6", "commit": "0338d2d", "kept": false, "sip": 29.96, "angle": 24.82, "joint_cm": 11.61, "vert_cm": 13.92, "localang": 11.91, "ts": "2026-06-02 05:11", "note": "calib 3.6deg (~=noise)"}
-{"exp": 3, "name": "calib_7", "commit": "0338d2d", "kept": true, "sip": 28.22, "angle": 23.67, "joint_cm": 10.71, "vert_cm": 12.82, "localang": 12.1, "ts": "2026-06-02 07:31", "note": "calib 7deg"}
+{"exp": 0, "name": "baseline", "commit": "16d0eda", "kept": true, "sip": 32.5, "angle": 28.45, "joint_cm": 12.31, "vert_cm": 15.41, "localang": 12.04, "ts": "2026-06-02 07:30", "note": "no aug"}
+{"exp": 1, "name": "domain_rand_n", "commit": "0338d2d", "kept": true, "sip": 29.98, "angle": 25.49, "joint_cm": 11.71, "vert_cm": 14.13, "localang": 12.02, "ts": "2026-06-02 05:10", "note": "accel/ori noise"}
+{"exp": 2, "name": "calib_3.6", "commit": "0338d2d", "kept": false, "sip": 29.96, "angle": 24.82, "joint_cm": 11.61, "vert_cm": 13.92, "localang": 11.91, "ts": "2026-06-02 05:11", "note": "calib 3.6deg"}
+{"exp": 3, "name": "calib_7", "commit": "0338d2d", "kept": true, "sip": 28.22, "angle": 23.67, "joint_cm": 10.71, "vert_cm": 12.82, "localang": 12.1, "ts": "2026-06-02 07:31", "note": "calib 7deg (big win)"}
 {"exp": 4, "name": "calib_10", "commit": "0338d2d", "kept": false, "sip": 28.11, "angle": 23.88, "joint_cm": 10.81, "vert_cm": 13.22, "localang": 12.08, "ts": "2026-06-02 09:06", "note": "calib 10deg (saturating)"}
-{"exp": 5, "name": "curated+calib7", "commit": "0f10056", "kept": true, "sip": 27.75, "angle": 23.22, "joint_cm": 10.54, "vert_cm": 12.73, "localang": 11.55, "ts": "2026-06-02 09:06", "note": "12 DIP-relevant datasets + calib 7deg -> best"}
+{"exp": 5, "name": "curated+calib7", "commit": "0f10056", "kept": true, "sip": 27.75, "angle": 23.22, "joint_cm": 10.54, "vert_cm": 12.73, "localang": 11.55, "ts": "2026-06-02 09:06", "note": "curated 12 sets"}
+{"exp": 6, "name": "cur+calib7+drift05", "commit": "0a832d6", "kept": true, "sip": 27.48, "angle": 23.52, "joint_cm": 10.62, "vert_cm": 12.85, "localang": 11.56, "ts": "2026-06-02 09:50", "note": "+ drift 0.05 -> best"}
+{"exp": 7, "name": "cur+calib7+drift10", "commit": "0a832d6", "kept": false, "sip": 27.64, "angle": 24.18, "joint_cm": 10.65, "vert_cm": 12.98, "localang": 11.56, "ts": "2026-06-02 09:51", "note": "+ drift 0.10"}
