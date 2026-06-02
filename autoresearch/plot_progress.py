@@ -39,9 +39,13 @@ def main():
         print(f"no experiments logged yet in {RESULTS}")
         return
 
+    # headline metric = SIP (deg) on the DIP-train val split (fall back to val_loss)
+    rows = [r for r in rows if ("sip" in r) or ("val" in r) or ("val_loss" in r)]
+    def metric(r): return r.get("sip", r.get("val_loss", r.get("val")))
     x = [r["exp"] for r in rows]
-    y = [r["val"] for r in rows]
+    y = [metric(r) for r in rows]
     kept = [r.get("kept", False) for r in rows]
+    unit = "SIP error (deg)" if all("sip" in r for r in rows) else "val metric"
 
     # best-so-far (cumulative min)
     best, cur = [], float("inf")
@@ -58,11 +62,11 @@ def main():
     ax.step(x, best, where="post", color="tab:blue", lw=2, zorder=4, label="best so far")
 
     b0, bN = best[0], best[-1]
-    ax.set_title(f"IMUPoser AutoResearch — lw_rp_h, AMASS-only → DIP val\n"
-                 f"{len(rows)} experiments | best val {bN:.4f} (from {b0:.4f}, "
+    ax.set_title(f"IMUPoser AutoResearch — lw_rp_h, AMASS-only → DIP-train val\n"
+                 f"{len(rows)} experiments | best {unit} {bN:.3f} (from {b0:.3f}, "
                  f"-{100*(b0-bN)/b0:.1f}%)", fontsize=11)
     ax.set_xlabel("experiment #")
-    ax.set_ylabel("validation loss (DIP-train, lw_rp_h)  ↓")
+    ax.set_ylabel(f"{unit} on DIP-train val (lw_rp_h)  ↓")
     ax.grid(alpha=0.3)
     ax.legend(loc="upper right")
     fig.tight_layout()

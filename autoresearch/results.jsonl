@@ -1,2 +1,2 @@
-{"exp": 0, "name": "baseline", "val": 0.0403, "kept": true, "note": "lw_rp_h, AMASS-only; best val at epoch 0 \u2014 synthetic training hurts DIP"}
-{"exp": 1, "name": "domain_rand_acc0.1_ori0.05", "val": 0.04033, "kept": false, "commit": "16d0eda", "note": "IMU input noise; ~= baseline, no improvement"}
+{"exp": 0, "name": "baseline", "commit": "16d0eda", "kept": true, "val_loss": 0.0403, "sip": 32.5, "angle": 28.45, "joint_cm": 12.31, "vert_cm": 15.41, "localang": 12.04, "note": "AMASS-only; best val at epoch 0"}
+{"exp": 1, "name": "domain_rand_n", "commit": "16d0eda", "kept": false, "val_loss": 0.04033, "sip": 31.93, "angle": 27.99, "joint_cm": 12.12, "vert_cm": 15.16, "localang": 12.0, "note": "input noise ~= baseline"}

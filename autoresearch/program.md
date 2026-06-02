@@ -18,9 +18,12 @@ error. It is used for *selection only, never training*. You optimize the **val**
 **test** set (`dip_test`, subjects s_09–s_10) is evaluated only at the very end, by the human.
 **You never train on DIP, never select on test, never look at test.**
 
-- Selection metric (val): **val loss on the held-out DIP slice** (lower = better), reported
-  by the training run. Pick the best checkpoint within a run, and the best run across
-  experiments, by this number.
+- Selection: pick the best checkpoint within a run by **val loss on `dip_train`** (the
+  training's monitor). After the run, compute the **full metric suite on the val split**
+  (`dip_train`, lw_rp_h) for that checkpoint via `autoresearch/log_result.py` — **SIP°,
+  Angle°, Joint cm, Vertex cm, LocalAngle°** — and log ALL of them to `results.jsonl`.
+  Headline / graph metric = **SIP (deg) on val** (lower = better). These use the protected
+  evaluator pointed at the *val* file — never `dip_test`.
 
 ---
 
