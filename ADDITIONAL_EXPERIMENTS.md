@@ -193,4 +193,23 @@ Key findings:
   noise + GPU-confounded — NOT established. Input-augmentation realism plateaus ~27.5°.
 - Key protocol fix: select on SIP-on-val (MSE val loss is anti-correlated with SIP over training); use
   fixed-epoch final model. SIP-on-val tracks DIP-test only coarsely (~+2-3° offset).
-- Next lever (must beat ~0.5°): architecture — missing-IMU reconstruction / staged prediction.
+
+### Architecture experiments (GPU-matched controls, best recipe = calib7 + drift0.05 + curated12, 30 ep)
+
+Each architecture was run against a **fresh GlobalModel baseline on the same GPU + same seed**, so the
+only difference is the architecture (the GPU confound above makes raw comparison to historical numbers
+unsafe — our fresh baselines land at 28.1–28.3, not exp6's recorded 27.48).
+
+| arch | SIP | Angle | Joint cm | Vert cm | matched baseline SIP | ΔSIP |
+|---|---|---|---|---|---|---|
+| **ReconIMUPoser** (exp8, GPU0): reconstruct full 5-IMU → pose | 28.37 | 24.14 | 10.72 | 13.13 | 28.11 (exp10) | **+0.26 (worse)** |
+| **StagedIMUPoser** (exp9, GPU1): IMU → joint pos → pose | 27.80 | 23.04 | 10.36 | 12.37 | 28.29 (exp11) | **−0.49** |
+
+- **Missing-IMU reconstruction does NOT help** (+0.26° SIP, worse on every metric). Reconstructing the 2
+  absent sensors from the 3 present ones injects error that propagates into the pose head; the auxiliary
+  target adds no signal the pose head wasn't already extracting.
+- **Staged prediction (IMU→joints→pose) gives a small, consistent gain**: −0.49° SIP and ALSO better on
+  Angle (−0.79°), Vertex (−0.55 cm), Joint (−0.26 cm) — 4/5 metrics better, LocalAngle flat. SIP alone is
+  at the noise floor, but multi-metric consistency argues it's a real (if small) effect. Intermediate
+  joint-position supervision gives the LSTM an easier geometric subproblem before the rotation regression.
+- **Seed-replication (exp12–15)** of staged-vs-baseline on two fresh seeds confirms/refutes the −0.5°.

@@ -21,8 +21,8 @@ from imuposer.models.utils import get_model
 from imuposer.datasets.utils import get_datamodule, get_split_files
 from imuposer.utils import get_parser
 
-# set the random seed
-seed_everything(42, workers=True)
+# set the random seed (override with SEED env for seed-replication / variance estimates)
+seed_everything(int(os.environ.get("SEED", "42")), workers=True)
 
 parser = get_parser()
 args = parser.parse_args()
