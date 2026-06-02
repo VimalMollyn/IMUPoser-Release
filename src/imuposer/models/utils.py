@@ -13,6 +13,8 @@ def get_model(config=None, pretrained=None):
         net = StagedIMUPoserModel(config=config)
     elif model == "TransformerIMUPoser":
         net = TransformerIMUPoser(config=config)
+    elif model == "DiffusionIMUPoser":
+        net = DiffusionIMUPoser(config=config)
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
     else:

@@ -68,6 +68,8 @@ def main():
         config.model = "ReconIMUPoser"
     elif any(k.startswith("joint_rnn.") for k in sd):
         config.model = "StagedIMUPoser"
+    elif any(k.startswith("net.step_mlp.") for k in sd):
+        config.model = "DiffusionIMUPoser"
     elif any(k.startswith("net.enc.") for k in sd):
         config.model = "TransformerIMUPoser"
     model = get_model(config)
