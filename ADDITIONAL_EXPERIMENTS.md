@@ -115,6 +115,22 @@ orientation; instead it:
 
 Ref: https://github.com/Xinyu-Yi/GlobalPose (built on TransPose/PIP/PNP).
 
+### Missing-IMU reconstruction as an auxiliary intermediate task
+**Why:** For a sparse combo (e.g. `lw_rp_h` = 3 of 5 sensors), we currently feed **zeros** for the
+absent sensors. Instead: a first stage **reconstructs the missing IMU signals** (acc+ori of the 2
+absent sensors) from the present ones, and the pose model then consumes the **completed 5-IMU set**
+(real present + reconstructed absent). Benefits: (a) the pose head always solves the easier
+*full-sensor* problem regardless of which combo is present; (b) reconstruction is a free auxiliary
+supervision — we have the full synthetic IMU for all 5 sensors, so the absent channels have ground
+truth; (c) it decouples "which sensors are present" from pose regression and may regularize.
+
+**Experiment:** two-stage model — Stage A: present IMUs → all-5 IMUs (acc+ori), supervised by the
+full synthetic IMU (MSE on the held-out channels); Stage B: completed 5-IMU set → pose. Train jointly
+(reconstruction loss + pose loss). Compare per-combo DIP val SIP to the direct (zeros-for-absent)
+baseline. Targets exist in the data (the dataset already has all 6/5 sensors before combo-masking —
+expose the unmasked sensors as the reconstruction target). Pairs naturally with the staged-pose idea
+above (IMU-completion → joint positions → pose).
+
 ## Parked (lower priority)
 
 ### Learning curve on the original data (data-saturation check)

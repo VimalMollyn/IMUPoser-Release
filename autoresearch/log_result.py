@@ -31,10 +31,18 @@ def main():
     ap.add_argument("--dir", required=True, help="experiment checkpoint dir")
     ap.add_argument("--commit", default="")
     ap.add_argument("--kept", action="store_true")
+    ap.add_argument("--final", action="store_true",
+                    help="use the FINAL checkpoint (last.ckpt) — fixed-epoch protocol (default)")
+    ap.add_argument("--best-val", action="store_true",
+                    help="use the best-val-loss checkpoint instead (legacy; picks under-trained epoch 0)")
     ap.add_argument("--note", default="")
     args = ap.parse_args()
 
-    ckpt, valloss = best_ckpt(Path(args.dir) if Path(args.dir).is_absolute() else REPO / args.dir)
+    d = Path(args.dir) if Path(args.dir).is_absolute() else REPO / args.dir
+    if args.best_val:
+        ckpt, valloss = best_ckpt(d)
+    else:  # fixed-epoch protocol: evaluate the final model
+        ckpt, valloss = d / "last.ckpt", None
     # full metrics on the VAL split (dip_train), lw_rp_h
     out = subprocess.run(
         ["uv", "run", "python", str(EVAL), "--checkpoint", str(ckpt),
@@ -43,7 +51,8 @@ def main():
     line = next(l for l in out.splitlines() if l.startswith("lw_rp_h"))
     _, sip, angle, joint, vert, localang = line.split()
     rec = {"exp": args.exp, "name": args.name, "commit": args.commit, "kept": args.kept,
-           "val_loss": round(valloss, 5), "sip": float(sip), "angle": float(angle),
+           "val_loss": (round(valloss, 5) if valloss is not None else None),
+           "ckpt": ckpt.name, "sip": float(sip), "angle": float(angle),
            "joint_cm": float(joint), "vert_cm": float(vert), "localang": float(localang),
            "note": args.note}
     with open(RESULTS, "a") as f:

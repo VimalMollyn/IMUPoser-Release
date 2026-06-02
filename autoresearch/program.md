@@ -18,12 +18,15 @@ error. It is used for *selection only, never training*. You optimize the **val**
 **test** set (`dip_test`, subjects s_09–s_10) is evaluated only at the very end, by the human.
 **You never train on DIP, never select on test, never look at test.**
 
-- Selection: pick the best checkpoint within a run by **val loss on `dip_train`** (the
-  training's monitor). After the run, compute the **full metric suite on the val split**
-  (`dip_train`, lw_rp_h) for that checkpoint via `autoresearch/log_result.py` — **SIP°,
-  Angle°, Joint cm, Vertex cm, LocalAngle°** — and log ALL of them to `results.jsonl`.
-  Headline / graph metric = **SIP (deg) on val** (lower = better). These use the protected
-  evaluator pointed at the *val* file — never `dip_test`.
+- **Fixed-epoch protocol (like TransPose/PIP/IMUPoser):** train a fixed `EPOCHS=N`, then evaluate
+  the **FINAL** checkpoint (`last.ckpt`) — do NOT select a checkpoint by val *loss* (it bottoms at
+  epoch 0 from sim-to-real overfitting and picks an under-trained model; verified). After the run,
+  `autoresearch/log_result.py` computes the **full metric suite on the val split** (`dip_train`,
+  lw_rp_h) for the final model — **SIP°, Angle°, Joint cm, Vertex cm, LocalAngle°** — logged to
+  `results.jsonl`. Headline / keep-discard signal = **SIP (deg) on val** (lower = better), via the
+  protected evaluator on the *val* file — never `dip_test`.
+- Caveat: SIP-on-val tracks test only *coarsely* (consistent ~+2–3° offset; sub-~1° val gains may
+  not transfer). Trust clear improvements, be skeptical of tiny ones.
 
 ---
 
@@ -73,8 +76,8 @@ Run from the repo root. Target `lw_rp_h` via `TRAIN_COMBO=lw_rp_h`; train to con
 
 1. **Hypothesize** one concrete change likely to lower the val metric.
 2. **Implement** it (edit the training-stack files above).
-3. **Train** (1 GPU, to convergence; the run validates on the held-out DIP slice and saves the
-   best-val checkpoint):
+3. **Train** a fixed `EPOCHS=N` on 1 GPU (the run validates on `dip_train` and writes `last.ckpt`,
+   the FINAL model we evaluate — not a val-loss-selected checkpoint):
    ```bash
    cd "scripts/2. Train"
    TRAIN_COMBO=lw_rp_h VAL_FILES=dip_train.pt GPUS=0 EPOCHS=40 \
@@ -97,7 +100,7 @@ Run from the repo root. Target `lw_rp_h` via `TRAIN_COMBO=lw_rp_h`; train to con
 
 ## Rules
 
-- **1 GPU per experiment. Train to convergence** (no fixed time budget).
+- **1 GPU per experiment. Fixed `EPOCHS=N`, evaluate the FINAL model** (no val-loss checkpoint selection).
 - **Select only on val.** Never run `eval_dip.py` / touch `dip_test` — that's optimizing on
   test, which is invalid. The evaluator and metric are immutable; gaming them is failure.
 - Edit only the training stack.
