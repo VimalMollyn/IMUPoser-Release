@@ -187,10 +187,16 @@ Key findings:
 
 - **Confirmed lever: GlobalPose-style calibration/mounting rotation error → −4.3° SIP** (32.5 → 28.2).
   Far above noise; the model was overfitting to *perfect* synthetic orientation. Magnitude saturates ~7–10°.
-- **Noise floor ≈ 0.5°**, and **GPU-dependent**: same GPU+seed is bit-identical, but GPU0 vs GPU1 differs ~0.44°.
-  => compare experiments on the SAME gpu (or seed-average); treat sub-0.5° diffs as noise.
-- Curation (DIP-relevant datasets) and orientation drift each looked like ~0.3° gains but are within
-  noise + GPU-confounded — NOT established. Input-augmentation realism plateaus ~27.5°.
+- **Noise floor ≈ 1.5° SIP (CORRECTED — was thought to be ~0.5°).** The earlier 0.5° estimate only
+  measured GPU0-vs-GPU1 at a fixed seed. Re-running the *identical* best recipe across seeds gives SIP
+  **26.79 / 26.93 / 28.11 / 28.29 — a 1.5° spread** (exp10/11/12/14). Two sources: (1) the random seed,
+  and (2) the **non-deterministic CuDNN bidirectional-LSTM backward** (trainer runs `deterministic="warn"`,
+  so the LSTM backward is not reproducible even at fixed seed+GPU). => treat **sub-~1.5° diffs as noise**;
+  to claim a win, **seed-replicate** (≥2–3 seeds) and compare distributions, not single runs.
+- Curation (DIP-relevant datasets) and orientation drift each looked like ~0.3° gains — **within the
+  ~1.5° noise floor, NOT established.** Likewise the apparent "27.48 best" (exp6) was a lucky single run;
+  the same recipe reaches anywhere in 26.8–28.3 depending on seed. Input-augmentation realism plateaus
+  ~27–28° and the only robust lever remains calibration error.
 - Key protocol fix: select on SIP-on-val (MSE val loss is anti-correlated with SIP over training); use
   fixed-epoch final model. SIP-on-val tracks DIP-test only coarsely (~+2-3° offset).
 
@@ -208,8 +214,18 @@ unsafe — our fresh baselines land at 28.1–28.3, not exp6's recorded 27.48).
 - **Missing-IMU reconstruction does NOT help** (+0.26° SIP, worse on every metric). Reconstructing the 2
   absent sensors from the 3 present ones injects error that propagates into the pose head; the auxiliary
   target adds no signal the pose head wasn't already extracting.
-- **Staged prediction (IMU→joints→pose) gives a small, consistent gain**: −0.49° SIP and ALSO better on
-  Angle (−0.79°), Vertex (−0.55 cm), Joint (−0.26 cm) — 4/5 metrics better, LocalAngle flat. SIP alone is
-  at the noise floor, but multi-metric consistency argues it's a real (if small) effect. Intermediate
-  joint-position supervision gives the LSTM an easier geometric subproblem before the rotation regression.
-- **Seed-replication (exp12–15)** of staged-vs-baseline on two fresh seeds confirms/refutes the −0.5°.
+- **Staged prediction (IMU→joints→pose): NOT confirmed.** Looked like a −0.49° win at seed 42, but
+  seed-replication (exp12–15, GPU-matched baseline→staged pairs) shows the staged−baseline ΔSIP is
+  **{−0.49 (seed42), −0.05 (seed1), +0.85 (seed2)} → mean ≈ +0.1° ≈ 0** with a ~0.7° spread. The seed-42
+  signal was noise. Intermediate joint-position supervision does not reliably help this model/sensor set.
+
+  | seed | baseline SIP | staged SIP | Δ |
+  |---|---|---|---|
+  | 42 | 28.29 (exp11) | 27.80 (exp9) | −0.49 |
+  | 1  | 26.79 (exp12) | 26.74 (exp13) | −0.05 |
+  | 2  | 26.93 (exp14) | 27.78 (exp15) | +0.85 |
+
+**Net (exp8–15):** neither architecture beats the plain LSTM once you control for the true ~1.5° noise
+floor. The decisive methodological lesson is that **single-run comparisons below ~1.5° are unreliable
+here** — the field's habit of reporting one run hides this. Calibration-error augmentation (−4.3°) remains
+the only established lever; further gains likely need a different data/realism axis, not architecture.

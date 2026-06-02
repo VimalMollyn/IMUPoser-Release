@@ -56,6 +56,15 @@ def main():
         best.append(cur)
 
     fig, ax = plt.subplots(figsize=(9, 5))
+    # NOISE BAND: identical best-recipe GlobalModel baselines re-run across seeds/GPUs (name "base*").
+    # Their spread IS the empirical run-to-run noise floor (~1.5° SIP, from seed + non-deterministic
+    # CuDNN bidirectional-LSTM backward). Anything inside this band is indistinguishable from noise.
+    base_y = [metric(r) for r in rows if r.get("name", "").startswith("base_")]
+    if len(base_y) >= 2:
+        lo, hi = min(base_y), max(base_y)
+        ax.axhspan(lo, hi, color="tab:orange", alpha=0.12, zorder=0,
+                   label=f"same-recipe noise band ({len(base_y)} runs, {hi - lo:.1f}° spread)")
+        ax.axhline(sum(base_y) / len(base_y), color="tab:orange", alpha=0.55, lw=1, ls="--", zorder=1)
     # each experiment: green if kept (new best / accepted), gray if discarded
     ax.scatter([xi for xi, k in zip(x, kept) if k], [yi for yi, k in zip(y, kept) if k],
                c="tab:green", s=36, zorder=3, label="kept")
