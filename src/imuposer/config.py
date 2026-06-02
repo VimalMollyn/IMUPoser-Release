@@ -149,6 +149,14 @@ amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU
 val_datasets  = ['MPI_HDM05', 'ACCAD']
 test_datasets = ['TotalCapture']   # held-out AMASS; DIP-IMU (s_09, s_10) is added on top
 
+# The 20 original AMASS datasets (before the 5 newer ones / Motion-X were added).
+# Used for the "original-data-only" ablation: train on these (minus val/test) and
+# exclude the 5 newer AMASS + Motion-X, keeping the same val/test for comparison.
+original_amass_datasets = ['ACCAD', 'BioMotionLab_NTroje', 'BMLhandball', 'BMLmovi', 'CMU',
+                           'DanceDB', 'DFaust_67', 'EKUT', 'Eyes_Japan_Dataset', 'HUMAN4D',
+                           'HumanEva', 'KIT', 'MPI_HDM05', 'MPI_Limits', 'MPI_mosh', 'SFU',
+                           'SSM_synced', 'TCD_handMocap', 'TotalCapture', 'Transitions_mocap']
+
 leaf_joints = [20, 21, 7, 8, 12]
 
 

@@ -18,7 +18,10 @@ class GlobalModelDataset(Dataset):
         # load the data
         self.train = split
         self.config = config
-        self.combos = list(amass_combos.values())
+        # train on all IMU combos (generalist) unless a single combo is pinned
+        # (config.train_combo, e.g. "lw_rp_h") -> specialist for that sensor set
+        _tc = getattr(config, "train_combo", None)
+        self.combos = [amass_combos[_tc]] if _tc else list(amass_combos.values())
         # explicit list of .pt filenames to load (used to keep validation drawn
         # only from the original datasets); None -> auto-discover all non-dip files
         self.data_files = data_files

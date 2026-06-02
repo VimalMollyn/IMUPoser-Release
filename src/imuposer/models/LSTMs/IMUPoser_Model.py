@@ -112,6 +112,13 @@ class IMUPoserModel(pl.LightningModule):
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
 
+    def on_fit_start(self):
+        # The SMPL body model holds plain (non-registered) tensors, so Lightning's
+        # device move doesn't touch it. Rebuild it on this rank's device so the joint
+        # loss works under multi-GPU (DDP), where each rank uses a different GPU.
+        if self.config.use_joint_loss:
+            self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
+
     def on_train_epoch_end(self):
         self.epoch_end_callback(self.training_step_outputs, loop_type="train")
         self.training_step_outputs.clear()

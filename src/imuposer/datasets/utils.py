@@ -8,7 +8,7 @@ import lightning.pytorch as pl
 from torch.utils.data import DataLoader
 
 from imuposer.datasets import *
-from imuposer.config import val_datasets, test_datasets
+from imuposer.config import val_datasets, test_datasets, original_amass_datasets
 
 def train_val_split(dataset, train_pct):
     # get the train and val split
@@ -31,6 +31,12 @@ def get_split_files(config):
     val_files = [f for f in all_files if f[:-len(".pt")] in val_set]
     test_files = [f for f in all_files if f[:-len(".pt")] in test_set] + ["dip_test.pt"]
     train_files = [f for f in all_files if f[:-len(".pt")] not in val_set and f[:-len(".pt")] not in test_set]
+
+    # original-data-only ablation: drop the 5 newer AMASS datasets + Motion-X from
+    # training (val/test are unchanged so the comparison stays controlled)
+    if getattr(config, "original_train_only", False):
+        orig = set(original_amass_datasets)
+        train_files = [f for f in train_files if f[:-len(".pt")] in orig]
     return train_files, val_files, test_files
 
 def get_dataset(config=None, test_only=False):
