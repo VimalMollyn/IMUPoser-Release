@@ -182,3 +182,15 @@ Key findings:
 - More **datasets** (new AMASS + Motion-X) did ~nothing on DIP *and* on sim-to-sim val.
 - Early stopping (~epoch 5–10) was appropriate; fixed-50-epochs overfits.
 </content>
+
+## AutoResearch findings (lw_rp_h, AMASS-only → DIP val, fixed-epoch SIP)
+
+- **Confirmed lever: GlobalPose-style calibration/mounting rotation error → −4.3° SIP** (32.5 → 28.2).
+  Far above noise; the model was overfitting to *perfect* synthetic orientation. Magnitude saturates ~7–10°.
+- **Noise floor ≈ 0.5°**, and **GPU-dependent**: same GPU+seed is bit-identical, but GPU0 vs GPU1 differs ~0.44°.
+  => compare experiments on the SAME gpu (or seed-average); treat sub-0.5° diffs as noise.
+- Curation (DIP-relevant datasets) and orientation drift each looked like ~0.3° gains but are within
+  noise + GPU-confounded — NOT established. Input-augmentation realism plateaus ~27.5°.
+- Key protocol fix: select on SIP-on-val (MSE val loss is anti-correlated with SIP over training); use
+  fixed-epoch final model. SIP-on-val tracks DIP-test only coarsely (~+2-3° offset).
+- Next lever (must beat ~0.5°): architecture — missing-IMU reconstruction / staged prediction.
