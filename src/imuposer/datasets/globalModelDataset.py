@@ -32,6 +32,11 @@ class GlobalModelDataset(Dataset):
         self.augment = False
         self.aug_acc_std = float(os.environ.get("AUG_ACC_STD", "0"))
         self.aug_ori_std = float(os.environ.get("AUG_ORI_STD", "0"))
+        # GlobalPose-style per-sensor calibration / mounting rotation error (radians,
+        # per-axis std; constant over a window). Real IMUs are mis-mounted/mis-calibrated
+        # vs the body segment, which our perfect FK orientation lacks. GlobalPose uses
+        # ~0.1*sqrt(pi/8) ≈ 0.063 rad (~3.6 deg/axis).
+        self.aug_calib = float(os.environ.get("AUG_CALIB_RAD", "0"))
         self.data = self.load_data()
 
     def load_data(self):
@@ -100,6 +105,13 @@ class GlobalModelDataset(Dataset):
 
         # domain randomization: perturb the PRESENT sensors only (absent stay zero)
         if self.augment:
+            # GlobalPose-style calibration/mounting error: rotate each present sensor's
+            # orientation by a random rotation, constant over the window (per-sensor).
+            if self.aug_calib > 0:
+                for c in combo:
+                    aa = torch.randn(3) * self.aug_calib                       # axis-angle (rad)
+                    Rc = math.axis_angle_to_rotation_matrix(aa.unsqueeze(0))[0]  # 3x3
+                    _combo_ori[:, c] = torch.matmul(Rc, _combo_ori[:, c])      # (W,3,3)
             if self.aug_acc_std > 0:
                 _combo_acc[:, combo] += torch.randn_like(_combo_acc[:, combo]) * self.aug_acc_std
             if self.aug_ori_std > 0:

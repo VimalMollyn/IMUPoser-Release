@@ -1,1 +1,2 @@
 {"exp": 0, "name": "baseline", "val": 0.0403, "kept": true, "note": "lw_rp_h, AMASS-only; best val at epoch 0 \u2014 synthetic training hurts DIP"}
+{"exp": 1, "name": "domain_rand_acc0.1_ori0.05", "val": 0.04033, "kept": false, "commit": "16d0eda", "note": "IMU input noise; ~= baseline, no improvement"}

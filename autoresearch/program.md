@@ -83,7 +83,11 @@ Run from the repo root. Target `lw_rp_h` via `TRAIN_COMBO=lw_rp_h`; train to con
 4. **Read the val metric** (best val loss on the held-out DIP slice for this run).
 5. **Decide on VAL:** keep (commit) if its best-val beats the current best in `results.md`,
    else revert `train`-stack changes. **Do not run the test evaluator to decide.**
-6. **Log** in `results.md`: hypothesis, one-line diff summary, **best val** metric, keep/discard, and *why*.
+6. **Log + version-control:** `git commit` the experiment's code on the `autoresearch` branch
+   (message `ar exp N: <idea> — val=X (kept/discarded)`), append the result **and the commit
+   hash** to `results.jsonl`, regenerate `progress.png`, and `git push`. Every experiment is a
+   recoverable commit linked to its graph point. (Separate branches only if running experiments
+   in parallel on different GPUs.)
 7. Repeat — change roughly one thing at a time.
 
 ---

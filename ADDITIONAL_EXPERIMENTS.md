@@ -92,6 +92,29 @@ more epochs, and specialization all failed to close.
 **Compare:** retrain the generalist on physics-simulated IMU, eval per-combo DIP. If DIP drops while
 the synthetic val barely moves, that's direct evidence the bottleneck was IMU *realism*, not motion data.
 
+### GlobalPose-style realistic IMU synthesis (orientation is the key)
+**Why:** Our baseline shows the real-DIP val is *lowest at epoch 0* and rises every epoch — the
+model overfits to our **perfect FK orientation**, which real IMUs never have. GlobalPose
+(Xinyu Yi, `imu_synthesis.py`) makes synthetic IMU realistic by **not** using ground-truth
+orientation; instead it:
+- **Calibration / mounting rotation error** per sensor: `~ randn(N,6,3) * 0.1*sqrt(pi/8)` (≈0.063
+  rad ≈ 3.6°/axis), constant per sequence — the dominant real-IMU orientation imperfection.
+- **Orientation via noisy gyro integration** (fast) or a full **ESKF** (`an=5e-2, wn=5e-3,
+  aw=1e-4, ww=1e-5, mn=5e-3`) fusing noisy accel/gyro/mag → orientation that *drifts* like a real IMU.
+- **Accel** = kinematic accel + gravity `(0,-9.8,0)` + noise (`std 5e-2`) + small random walk.
+- A **T-pose calibration** pipeline (sensor↔body `RBS`) matching the real DIP calibration.
+6 IMUs, 60 fps.
+
+**Experiments (tiers):**
+- *Train-time aug (in progress):* per-sensor **calibration rotation error** on orientation
+  (`AUG_CALIB_RAD`, exp2), then add orientation drift + accel gravity/noise.
+- *Full re-synthesis:* regenerate the dataset GlobalPose-style — gyro-integrate noisy angular
+  velocity (derive ω from the pose sequence) for a drifting orientation, add gravity+noise to accel,
+  inject calibration error, run the T-pose calibration. This is the most faithful "valid IMU" and
+  the most likely big win, but it's a synthesis-stage rewrite (cf. `scripts/1. Preprocessing`).
+
+Ref: https://github.com/Xinyu-Yi/GlobalPose (built on TransPose/PIP/PNP).
+
 ## Parked (lower priority)
 
 ### Learning curve on the original data (data-saturation check)
