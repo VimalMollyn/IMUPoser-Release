@@ -247,20 +247,28 @@ the only established lever; further gains likely need a different data/realism a
   immune (recurrence is length-agnostic), which is itself a practical argument for it here. Fix is
   model-side sliding-window inference (`TF_EVAL_WINDOW`), like TIP / real-time IMU transformers; the
   protected evaluator is unchanged.
-| **DiffusionIMUPoser** (exp18/19, 60 ep) | 32.84 | 32.40 | 26.79 / 26.93 | **far worse (+~6°)** |
+| **DiffusionIMUPoser** (exp18/19, 60 ep) | 28.05 | 28.50 | 26.79 / 26.93 | **≈ transformer (+~1.4°)** |
 
-- **A conditional diffusion model is clearly NOT competitive here** (~32–33° SIP, ~6° worse than the
-  LSTM; ≈ the no-aug baseline). 10-sample averaging (→ conditional mean) helps but only to 31.0 — still
-  +4.2°. EgoEgo-style diffusion is built for *plausible, diverse* full-body motion from head pose;
-  sparse-IMU→pose for a per-frame accuracy metric (SIP) is a well-constrained regression where a single
-  generative sample is just high-variance and direct regression wins. (It is likely also undertrained at
-  60 ep — diffusion typically needs far more — and per-window independent sampling drops temporal
-  continuity; but the ~6° gap and wrong-tool-for-the-metric argument make chasing it low-value.)
+- **Diffusion is competitive once sampled correctly — the model was never the problem, the SAMPLER was.**
+  As first run (DDIM 50 steps) it scored 32.8/32.4 (~6° worse, ≈ no-aug baseline), which looked like a
+  flat failure. But the **denoising val_loss was lower than the LSTM's** (0.020 vs 0.037) — a real tell.
+  Breaking the denoising MSE down by noise level shows it is fine even at the hard end (pure-noise t=T
+  MSE 0.029 < LSTM 0.037). The issue is the **iterative DDIM trajectory**: SIP degrades *monotonically*
+  with steps — **1→28.05, 20→31.90, 50→32.84**. The one-shot x0 prediction (`DIFF_SAMPLE_STEPS=1`) is
+  best, giving 28.05/28.50 ≈ the transformer. (Why: with a near-deterministic conditional mapping
+  IMU→pose, the one-shot x0 is already near-optimal; re-noising it and iterating drifts off the training
+  distribution and compounds error. Strongly-conditioned diffusion favors few-step sampling.)
+- Caveat on `val_loss` comparisons across objectives: the diffusion `val_loss` is the *denoising* MSE
+  averaged over random noise levels (dominated by easy low-noise cases), NOT pose-regression error — it
+  is not directly comparable to the LSTM/Transformer `val_loss`. SIP after sampling is the real metric.
 
-**Overall (exp8–19): NO architecture or model family beats the well-tuned bidirectional LSTM.**
-recon ≈ +0.3, staged ≈ 0, transformer ≈ 0-to-worse, diffusion ≈ +6 (all ΔSIP vs seed-matched LSTM).
-The LSTM's recurrent inductive bias fits short-window sparse-IMU regression with ~31k windows; it is
-also length-agnostic (transformers needed a sliding-window-inference fix; the LSTM did not). The single
-established lever remains **calibration-error augmentation (−4.3°)**. Remaining levers are the data/realism
-axis (more faithful synthetic-IMU generation) or shrinking the ~1.5° noise floor (deterministic training +
-seed-averaging) so finer effects become detectable — not bigger models.
+**Overall (exp8–19): NO architecture or model family beats the well-tuned bidirectional LSTM — but
+several MATCH it.** recon ≈ +0.3, staged ≈ 0, transformer ≈ 0-to-+1.3, diffusion (1-step) ≈ +1.4 (all
+ΔSIP vs seed-matched LSTM; all within ~1–2× the 1.5° noise floor). The LSTM's recurrent bias fits
+short-window sparse-IMU regression with ~31k windows and is length-agnostic (attention models needed a
+sliding-window-inference fix; the LSTM did not), so it remains the best *default*, but the gaps are
+small. The single lever that clears the noise floor remains **calibration-error augmentation (−4.3°)**.
+Remaining levers are the data/realism axis (more faithful synthetic-IMU generation) or shrinking the
+~1.5° noise floor (deterministic training + seed-averaging) so finer effects become detectable — not
+bigger models. **Methodological lesson (this round): never trust a generative model's training-objective
+loss as a proxy for the task metric, and always sweep sampling steps before declaring it dead.**
