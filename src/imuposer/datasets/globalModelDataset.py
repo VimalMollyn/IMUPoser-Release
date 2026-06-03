@@ -161,7 +161,11 @@ class GlobalModelDataset(Dataset):
             _output = torch.cat([_output, jp], dim=1)
         elif aux == "tran":
             tr = self.tran_windows[window_idx].float()         # W, 3 (root translation)
-            _output = torch.cat([_output, tr], dim=1)
+            # per-frame root VELOCITY (m/frame) — learnable from IMU (single-integrate accel), unlike
+            # absolute position which has no global reference. TransPose-style translation target.
+            vel = torch.zeros_like(tr)
+            vel[1:] = tr[1:] - tr[:-1]
+            _output = torch.cat([_output, vel], dim=1)
 
         return _input, _output
 
