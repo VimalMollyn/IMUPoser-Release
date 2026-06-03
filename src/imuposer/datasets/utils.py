@@ -86,7 +86,7 @@ def get_dataset(config=None, test_only=False):
 def get_datamodule(config):
     model = config.model
     # load the dataset
-    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel"]:
+    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser"]:
         return IMUPoserDataModule(config)
     else:
         print("Enter a valid model")

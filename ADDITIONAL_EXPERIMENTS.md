@@ -296,3 +296,14 @@ backbones are not.** Ranking now: AvatarPoser (transformer+IK) < LSTM < deeper-t
 ≈ diffusion(1-step). Two established levers: **calibration-error augmentation (−4.3°, large)** and the
 **IK consistency loss (−0.34°, small but seed- and metric-consistent)**. Both are about *geometric/sensor
 realism*, not model capacity.
+
+### IK loss is transformer-specific — it does NOT transfer to the LSTM (exp26/27)
+
+Added the same IK orientation-consistency loss to the LSTM (IK_LOSS=1), GPU+seed+epoch-matched to the
+plain-LSTM baselines. LSTM+IK ΔSIP vs plain LSTM = **+0.88 (seed1: 27.67 vs 26.79), −0.47 (seed2: 26.46
+vs 26.93)** → mean ~+0.2, a 1.35° swing = **inconsistent / within noise**. Contrast AvatarPoser
+(transformer+IK), which was consistently better at both seeds. Interpretation: the IK term supplies
+geometric grounding the *attention* model lacks, but the *LSTM's recurrence already encodes that
+consistency*, so the extra constraint just over-regularizes / adds noise. **The lever is "weak backbone
++ IK", not "IK universally".** Net: nothing has cleanly beaten the plain LSTM except AvatarPoser, and
+that only ties-to-slightly-beats it. The LSTM remains the best backbone.
