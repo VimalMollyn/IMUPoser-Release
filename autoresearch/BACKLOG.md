@@ -35,3 +35,14 @@ accel-consistency(hurts), physics-refine(neutral), translation(hurts), activity(
 
 ## Capstone
 - [ ] best-of-everything model, 3-seed, final dip_test number + updated graph.
+
+## NEW threads (2026-06-03 afternoon, user ideas)
+- [~] **5-IMU teacher -> 3-IMU DISTILLATION** (DISTILL_TEACHER + AUX_TARGET=imu). Train teacher (TRAIN_COMBO=global)
+      first, then distilled student (lw_rp_h). HIGH priority.
+- [ ] **value/uncertainty-weighted distillation** (teacher confidence weights the distill loss) = the
+      tractable version of the "RL teacher provides value" idea. (RL proper is high-variance for this
+      regression; distillation is the supervised equivalent.)
+- [ ] **accel realism** AUG_ACC_BIAS/SCALE (other IMU-signal axis) — ready.
+- [ ] **LR / optimizer / weight-decay / cosine-sched sweeps** (LR, OPTIMIZER=adam/adamw/sgd/radam,
+      WEIGHT_DECAY, LR_SCHED=cosine) — ready, env-only.
+- [ ] **bigger LSTM** (LSTM_HIDDEN 768/1024) — exp49/50 running.
