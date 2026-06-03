@@ -24,10 +24,15 @@ class IMUPoserModel(pl.LightningModule):
         self.n_output_joints = n_output_joints
         self.n_pose_output = n_output_joints * (6 if config.r6d == True else 9)
 
-        n_output = self.n_pose_output
+        # multi-task TRANSLATION head (TRANS_LOSS=1): widen the RNN output by 3 to also predict the
+        # root translation (paired with AUX_TARGET=tran in the dataset). Tests whether translation as an
+        # auxiliary task helps pose via shared features (the metric is root-relative, so any gain is indirect).
+        self.trans_loss = bool(os.environ.get("TRANS_LOSS"))
+        self.trans_w = float(os.environ.get("TRANS_W", "1.0"))
+        n_output = self.n_pose_output + (3 if self.trans_loss else 0)
 
         self.batch_size = config.batch_size
-        
+
         self.dip_model = RNN(n_input=n_input, n_output=n_output, n_hidden=512, bidirectional=True)
 
         self.config = config
@@ -112,6 +117,9 @@ class IMUPoserModel(pl.LightningModule):
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
             loss = loss + self._acc_consistency(imu_inputs, pred_pose)
+        if self.trans_loss:
+            np_ = self.n_pose_output
+            loss = loss + self.trans_w * self.loss(_pred[:, :, np_:np_+3], _target[:, :, np_:np_+3])
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
 
@@ -138,6 +146,9 @@ class IMUPoserModel(pl.LightningModule):
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
             loss = loss + self._acc_consistency(imu_inputs, pred_pose)
+        if self.trans_loss:
+            np_ = self.n_pose_output
+            loss = loss + self.trans_w * self.loss(_pred[:, :, np_:np_+3], _target[:, :, np_:np_+3])
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
 

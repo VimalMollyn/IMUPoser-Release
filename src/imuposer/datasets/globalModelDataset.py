@@ -62,7 +62,10 @@ class GlobalModelDataset(Dataset):
         ori_windows = []
         pose_windows = []
         joint_windows = []
-        need_joint = getattr(self.config, "aux_target", None) == "joint"
+        tran_windows = []
+        _aux = getattr(self.config, "aux_target", None)
+        need_joint = _aux == "joint"
+        need_tran = _aux == "tran"
 
         window_length = self.config.max_sample_len * 25 // 60
 
@@ -91,11 +94,14 @@ class GlobalModelDataset(Dataset):
                 pose_windows.extend(torch.split(fpose, window_length))
                 if need_joint:
                     joint_windows.extend(torch.split(fdata["joint"][i].view(-1, 24, 3), window_length))
+                if need_tran:
+                    tran_windows.extend(torch.split(fdata["tran"][i].view(-1, 3), window_length))
 
         self.acc_windows = acc_windows
         self.ori_windows = ori_windows
         self.pose_windows = pose_windows
         self.joint_windows = joint_windows
+        self.tran_windows = tran_windows
         self.num_windows = len(pose_windows)
         self.num_combos = len(self.combos)
 
@@ -153,6 +159,9 @@ class GlobalModelDataset(Dataset):
             jp = self.joint_windows[window_idx].float()        # W, 24, 3
             jp = (jp - jp[:, :1]).reshape(jp.shape[0], -1)      # root-relative, W, 72
             _output = torch.cat([_output, jp], dim=1)
+        elif aux == "tran":
+            tr = self.tran_windows[window_idx].float()         # W, 3 (root translation)
+            _output = torch.cat([_output, tr], dim=1)
 
         return _input, _output
 
