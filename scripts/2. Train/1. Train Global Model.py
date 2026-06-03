@@ -67,6 +67,9 @@ if _ckpt_dir:
 # excluding the 5 newer AMASS + Motion-X. Same val/test => controlled ablation.
 config.original_train_only = bool(os.environ.get("ORIGINAL_ONLY"))
 
+# MAX_SAMPLE_LEN: window length knob (default 300 -> 125-frame windows at 25fps). Sweep temporal context.
+config.max_sample_len = int(os.environ.get("MAX_SAMPLE_LEN", config.max_sample_len))
+
 # TRAIN_COMBO=<combo> trains a SPECIALIST on a single IMU combo (e.g. lw_rp_h)
 # instead of the all-combo generalist; train + val both use only that combo.
 config.train_combo = os.environ.get("TRAIN_COMBO")
