@@ -57,6 +57,12 @@ class GlobalModelDataset(Dataset):
         # integration and drifts over time. Model it as a per-sensor constant angular-
         # velocity bias (rad/s) integrated over the window -> a time-growing rotation.
         self.aug_drift = float(os.environ.get("AUG_DRIFT_RAD_S", "0"))
+        # GlobalPose-style realistic gyro-integration orientation: real IMU orientation = integral of a
+        # NOISY gyro (random-walk bias + white noise), giving a sqrt-time random-walk DRIFT (esp. yaw) that
+        # our perfect-FK orientation and the crude constant-bias drift both lack. AUG_GYRO_RW = bias
+        # random-walk rate (rad/s/sqrt(s)); AUG_GYRO_N = white gyro noise (rad/s). Vectorized via cumsum.
+        self.aug_gyro_rw = float(os.environ.get("AUG_GYRO_RW", "0"))
+        self.aug_gyro_n = float(os.environ.get("AUG_GYRO_N", "0"))
         self.data = self.load_data()
 
     def load_data(self):
@@ -160,6 +166,19 @@ class GlobalModelDataset(Dataset):
                     bias = torch.randn(3) * self.aug_drift                     # rad/s
                     Rd = math.axis_angle_to_rotation_matrix(bias.unsqueeze(0) * t)  # (W,3,3)
                     _combo_ori[:, c] = torch.matmul(Rd, _combo_ori[:, c])
+            # GlobalPose-style realistic gyro-integration drift: random-walk bias + white gyro noise,
+            # integrated -> sqrt-time random-walk orientation error (the real-IMU drift; richer than the
+            # constant-bias model above). Vectorized: accumulated rotation-vector via cumsum (small-error
+            # approx ignores non-commutativity, fine at these magnitudes).
+            if self.aug_gyro_rw > 0 or self.aug_gyro_n > 0:
+                W = _combo_ori.shape[0]
+                dt = 1.0 / 25.0
+                for c in combo:
+                    bias = torch.cumsum(torch.randn(W, 3) * self.aug_gyro_rw * (dt ** 0.5), dim=0)  # rad/s
+                    noise = torch.randn(W, 3) * self.aug_gyro_n                                      # rad/s
+                    d = torch.cumsum((bias + noise) * dt, dim=0)               # accumulated drift rot-vec (W,3)
+                    D = math.axis_angle_to_rotation_matrix(d)                  # (W,3,3)
+                    _combo_ori[:, c] = torch.matmul(D, _combo_ori[:, c])
             if self.aug_acc_std > 0:
                 _combo_acc[:, combo] += torch.randn_like(_combo_acc[:, combo]) * self.aug_acc_std
             if self.aug_ori_std > 0:
