@@ -15,6 +15,8 @@ def get_model(config=None, pretrained=None):
         net = TransformerIMUPoser(config=config)
     elif model == "DiffusionIMUPoser":
         net = DiffusionIMUPoser(config=config)
+    elif model == "AvatarPoserModel":
+        net = AvatarPoserModel(config=config)
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
     else:
