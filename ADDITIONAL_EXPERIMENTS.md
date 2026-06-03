@@ -339,3 +339,8 @@ critically-damped 2nd-order rotational dynamics, PD-actuated toward the network 
   root-relative SIP gain is small and comes from joint physics-training + contact, not a post-hoc passive
   pass on a frozen model. Faithfully capturing the physics win would require predicting translation +
   modeling contact + (ideally) training with physics in the loop — a larger build than a refinement.
+- **Validation that the (fixed) sim genuinely does the physics job:** it reduces prediction JITTER
+  (mean joint acceleration) by **−9% (ω0=80) to −18% (ω0=20)** on the LSTM's DIP predictions — exactly
+  the smoothness improvement physics-based methods report. So physics helps the dimension it's meant to;
+  our root-relative-rotation eval just doesn't score jitter/translation/contact. (Net: not a SIP lever
+  *for this metric*, but the simulator is correct and behaves as the literature predicts.)
