@@ -21,6 +21,8 @@ def get_model(config=None, pretrained=None):
         net = CNN1DIMUPoser(config=config)
     elif model == "CodebookIMUPoser":
         net = CodebookIMUPoser(config=config)
+    elif model == "ActivityIMUPoser":
+        net = ActivityIMUPoser(config=config)
     elif model == "GlobalModelIMUPoserFineTuneDIP":
         net = IMUPoserModelFineTune(config=config, pretrained_model=pretrained)
     else:

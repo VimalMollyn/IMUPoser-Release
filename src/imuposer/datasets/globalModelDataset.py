@@ -4,6 +4,22 @@ from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
 
+
+def _kmeans(x, k, iters=25, seed=0):
+    r"""Tiny Lloyd k-means (torch). x: (N,D) -> labels (N,). Deterministic init from a fixed stride."""
+    n = x.shape[0]
+    g = torch.Generator().manual_seed(seed)
+    c = x[torch.randperm(n, generator=g)[:k]].clone()
+    labels = torch.zeros(n, dtype=torch.long)
+    for _ in range(iters):
+        d = torch.cdist(x, c)                     # N,k
+        labels = d.argmin(1)
+        for j in range(k):
+            m = labels == j
+            if m.any():
+                c[j] = x[m].mean(0)
+    return labels
+
 class GlobalModelDataset(Dataset):
     r"""
     Each training sample is a (window, IMU-combo) pair: every windowed sequence is
@@ -66,6 +82,7 @@ class GlobalModelDataset(Dataset):
         _aux = getattr(self.config, "aux_target", None)
         need_joint = _aux == "joint"
         need_tran = _aux == "tran"
+        need_act = _aux == "activity"
 
         window_length = self.config.max_sample_len * 25 // 60
 
@@ -104,6 +121,14 @@ class GlobalModelDataset(Dataset):
         self.tran_windows = tran_windows
         self.num_windows = len(pose_windows)
         self.num_combos = len(self.combos)
+
+        # pseudo-ACTIVITY labels: cluster windows by mean pose (no real activity labels exist).
+        # K from ACT_K (default 16). One label per window; used to supervise the activity head.
+        if need_act:
+            K = int(os.environ.get("ACT_K", "16"))
+            feats = torch.stack([pw.float().mean(0).flatten() for pw in pose_windows])  # (Nwin, 216)
+            self.activity_labels = _kmeans(feats, K)
+            self.n_activities = K
 
     def __getitem__(self, idx):
         window_idx = idx // self.num_combos
@@ -166,6 +191,10 @@ class GlobalModelDataset(Dataset):
             vel = torch.zeros_like(tr)
             vel[1:] = tr[1:] - tr[:-1]
             _output = torch.cat([_output, vel], dim=1)
+        elif aux == "activity":
+            # per-window pseudo-activity label, broadcast over frames as one extra column
+            lab = float(self.activity_labels[window_idx])
+            _output = torch.cat([_output, _output.new_full((_output.shape[0], 1), lab)], dim=1)
 
         return _input, _output
 

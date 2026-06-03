@@ -77,6 +77,8 @@ def main():
         config.model = "CNN1DIMUPoser"
     elif "codebook" in sd:
         config.model = "CodebookIMUPoser"
+    elif any(k.startswith("act_head.") for k in sd):
+        config.model = "ActivityIMUPoser"
     model = get_model(config)
     # strict=False tolerates ONLY the (non-learned) sinusoidal positional-encoding buffer, which is
     # computed on the fly now; assert nothing else is missing/unexpected so real weight mismatches fail.
