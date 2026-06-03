@@ -307,3 +307,14 @@ geometric grounding the *attention* model lacks, but the *LSTM's recurrence alre
 consistency*, so the extra constraint just over-regularizes / adds noise. **The lever is "weak backbone
 + IK", not "IK universally".** Net: nothing has cleanly beaten the plain LSTM except AvatarPoser, and
 that only ties-to-slightly-beats it. The LSTM remains the best backbone.
+
+### Physics: acceleration-consistency loss HURTS the LSTM (exp30/31)
+
+Physics-refinement idea (TransPose/PIP/PNP) adapted to our root-relative metric: instead of a
+rigid-body simulator (impractical; mostly fixes global translation/foot-skate we don't measure),
+enforce a Newtonian consistency — predicted motion's synthetic acceleration at the IMU joints must
+match the OBSERVED accelerometer (the signal half the IK term ignores). Result: ACC_W=1.0 → 28.76,
+ACC_W=0.1 → 28.61 vs plain LSTM seed1 26.79, i.e. **+1.8–2.0° WORSE, ~weight-independent**. The
+joint-proxy (vs mounting vertex) + coarse 25fps second-difference is too noisy/biased a target, and
+its large early gradient derails training. Not a useful lever as formulated. (A faithful version would
+need vertex-accurate FK + the true 60fps synthesis, i.e. mesh FK every step — too costly here.)
