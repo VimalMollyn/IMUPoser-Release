@@ -40,6 +40,13 @@ class IMUPoserModel(pl.LightningModule):
         # orientation. Default OFF so the baseline LSTM is byte-for-byte unchanged.
         self.ik_loss = bool(os.environ.get("IK_LOSS"))
         self.ik_w = float(os.environ.get("AP_IK_W", "1.0"))
+        # physics-informed ACCELERATION-consistency loss (ACC_LOSS=1): the predicted motion's synthetic
+        # acceleration at the IMU joints must match the OBSERVED accelerometer signal. Uses the accel half
+        # of the IMU (the IK term uses only orientation). Joint-proxy for the mounting vertex; 25fps^2 to
+        # match _syn_acc's true-accel units (which were /acc_scale in the input).
+        self.acc_loss = bool(os.environ.get("ACC_LOSS"))
+        self.acc_w = float(os.environ.get("ACC_W", "1.0"))
+        self.acc_scale = config.acc_scale
         self.register_buffer("imu_joints", torch.tensor([18, 19, 1, 2, 15]), persistent=False)
 
         if config.loss_type == "mse":
@@ -73,6 +80,20 @@ class IMUPoserModel(pl.LightningModule):
             return pred_pose.new_zeros(())
         return self.ik_w * self.loss(pred_so * m, obs_ori * m)
 
+    def _acc_consistency(self, imu_inputs, pred_pose):
+        # predicted joint-acceleration (2nd time-diff x 25fps^2 / acc_scale) vs observed IMU accel
+        B, T = imu_inputs.shape[:2]
+        jpos = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[1]
+        sp = jpos[:, self.imu_joints].view(B, T, 5, 3)
+        a = torch.zeros_like(sp)
+        a[:, 1:-1] = (sp[:, :-2] + sp[:, 2:] - 2 * sp[:, 1:-1]) * (25.0 ** 2) / self.acc_scale
+        obs_acc = imu_inputs[:, :, :15].reshape(B, T, 5, 3)
+        obs_ori = imu_inputs[:, :, 15:60].reshape(B, T, 5, 3, 3)
+        m = (obs_ori.abs().flatten(3).sum(-1) > 0).unsqueeze(-1)
+        if not m.any():
+            return pred_pose.new_zeros(())
+        return self.acc_w * self.loss(a * m, obs_acc * m)
+
     def training_step(self, batch, batch_idx):
         imu_inputs, target_pose, input_lengths, _ = batch
 
@@ -89,6 +110,8 @@ class IMUPoserModel(pl.LightningModule):
             loss += joint_pos_loss
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
+        if self.acc_loss:
+            loss = loss + self._acc_consistency(imu_inputs, pred_pose)
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
 
@@ -113,6 +136,8 @@ class IMUPoserModel(pl.LightningModule):
             loss += joint_pos_loss
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
+        if self.acc_loss:
+            loss = loss + self._acc_consistency(imu_inputs, pred_pose)
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
 
