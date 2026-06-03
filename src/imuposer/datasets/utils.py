@@ -57,7 +57,7 @@ def get_dataset(config=None, test_only=False):
     model = config.model
     # load the dataset (Recon/Staged share the same GlobalModelDataset; they only
     # differ in the auxiliary target appended via config.aux_target)
-    if model in ("GlobalModelIMUPoser", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel"):
+    if model in ("GlobalModelIMUPoser", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser"):
         train_files, val_files, test_files = get_split_files(config)
 
         test_dataset = GlobalModelDataset("test", config, data_files=test_files)
