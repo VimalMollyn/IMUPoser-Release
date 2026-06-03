@@ -272,3 +272,27 @@ Remaining levers are the data/realism axis (more faithful synthetic-IMU generati
 ~1.5° noise floor (deterministic training + seed-averaging) so finer effects become detectable — not
 bigger models. **Methodological lesson (this round): never trust a generative model's training-objective
 loss as a proxy for the task metric, and always sweep sampling steps before declaring it dead.**
+
+### Deeper models + AvatarPoser (exp20–23) — FIRST model to beat the LSTM
+
+| model | seed1 SIP | seed2 SIP | vs LSTM (26.79/26.93) | verdict |
+|---|---|---|---|---|
+| Transformer **8-layer** (exp20/22) | 27.29 | 27.52 | +0.50 / +0.59 | depth helps vs 4-layer (28.1) but still > LSTM |
+| **AvatarPoser** (exp21/23, transformer + IK) | **26.48** | **26.56** | **−0.31 / −0.37** | **beats LSTM at both seeds, on ALL metrics** |
+
+- **Going deeper (4→8 transformer layers) helps a little** (seed1 28.11→27.29) but does NOT close the gap
+  to the LSTM — consistent with not being data-limited (~31k short windows; more params ≈ mild overfit).
+- **AvatarPoser is the first model to consistently beat the LSTM:** −0.31 / −0.37° SIP, and better on
+  *every* one of the 5 metrics at *both* seeds (10/10; seed2 Angle 21.22 vs 22.76 = −1.54°). Pure-noise
+  probability of 10/10 ≈ 0.1%, so despite the small SIP magnitude this is very unlikely to be noise.
+- **The win is the IK loss, not attention.** Plain (28.1/27.0) and deeper (27.3/27.5) transformers are
+  both *worse* than the LSTM, so the only thing that flips AvatarPoser to a win is its
+  orientation-consistency term (predicted FK global orientation at the IMU joints == observed sensor
+  orientation). That is a *transferable* auxiliary loss → **next: add it to the LSTM (the best base
+  model)** to confirm the IK term is the lever and stack it on the strongest backbone.
+
+**Revised overall (exp8–23): the IK orientation-consistency loss is a real (small) lever; bigger/fancier
+backbones are not.** Ranking now: AvatarPoser (transformer+IK) < LSTM < deeper-transformer < transformer
+≈ diffusion(1-step). Two established levers: **calibration-error augmentation (−4.3°, large)** and the
+**IK consistency loss (−0.34°, small but seed- and metric-consistent)**. Both are about *geometric/sensor
+realism*, not model capacity.
