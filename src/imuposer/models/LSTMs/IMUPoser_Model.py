@@ -19,6 +19,14 @@ class IMUPoserModel(pl.LightningModule):
     def __init__(self, config:Config):
         super().__init__()
         n_input = 12 * len(config.joints_set)
+        self.n_input = n_input
+
+        # privileged-information DISTILLATION: a frozen 5-IMU teacher (DISTILL_TEACHER=<ckpt>) supervises
+        # this (3-IMU) student to match its pose. Teacher runs on the full clean 5-IMU (AUX_TARGET=imu
+        # appends it to the target). DISTILL_W weights the teacher-matching MSE. Loaded in on_fit_start.
+        self.distill_teacher = os.environ.get("DISTILL_TEACHER")
+        self.distill_w = float(os.environ.get("DISTILL_W", "1.0"))
+        self._teacher = None
 
         n_output_joints = len(config.pred_joints_set)
         self.n_output_joints = n_output_joints
@@ -123,6 +131,9 @@ class IMUPoserModel(pl.LightningModule):
         if self.trans_loss:
             np_ = self.n_pose_output
             loss = loss + self.trans_w * self.loss(_pred[:, :, np_:np_+3], _target[:, :, np_:np_+3])
+        if self._teacher is not None:
+            np_ = self.n_pose_output
+            loss = loss + self._distill_loss(_target[:, :, np_:np_+self.n_input], input_lengths, pred_pose)
 
         self.log(f"training_step_loss", loss.item(), batch_size=self.batch_size)
 
@@ -152,6 +163,9 @@ class IMUPoserModel(pl.LightningModule):
         if self.trans_loss:
             np_ = self.n_pose_output
             loss = loss + self.trans_w * self.loss(_pred[:, :, np_:np_+3], _target[:, :, np_:np_+3])
+        if self._teacher is not None:
+            np_ = self.n_pose_output
+            loss = loss + self._distill_loss(_target[:, :, np_:np_+self.n_input], input_lengths, pred_pose)
 
         self.log(f"validation_step_loss", loss.item(), batch_size=self.batch_size)
 
@@ -181,6 +195,21 @@ class IMUPoserModel(pl.LightningModule):
         # loss works under multi-GPU (DDP), where each rank uses a different GPU.
         if self.config.use_joint_loss:
             self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
+        if self.distill_teacher and self._teacher is None:
+            # frozen 5-IMU teacher (a GlobalModelIMUPoser RNN, default 512/2)
+            t = RNN(n_input=self.n_input, n_output=self.n_pose_output, n_hidden=512, n_rnn_layer=2, bidirectional=True)
+            sd = torch.load(self.distill_teacher, map_location="cpu")["state_dict"]
+            t.load_state_dict({k[len("dip_model."):]: v for k, v in sd.items() if k.startswith("dip_model.")})
+            t.eval().to(self.device)
+            for p in t.parameters():
+                p.requires_grad_(False)
+            self._teacher = t
+
+    def _distill_loss(self, full_imu, lens, student_pose):
+        # teacher pose from the full clean 5-IMU (AUX_TARGET=imu), match it (privileged distillation)
+        with torch.no_grad():
+            tp = self._teacher(full_imu, lens)[0][:, :, :self.n_pose_output]
+        return self.distill_w * self.loss(student_pose, tp)
 
     def on_train_epoch_end(self):
         self.epoch_end_callback(self.training_step_outputs, loop_type="train")
