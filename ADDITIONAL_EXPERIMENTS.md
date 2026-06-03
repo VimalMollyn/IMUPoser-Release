@@ -318,3 +318,24 @@ ACC_W=0.1 → 28.61 vs plain LSTM seed1 26.79, i.e. **+1.8–2.0° WORSE, ~weigh
 joint-proxy (vs mounting vertex) + coarse 25fps second-difference is too noisy/biased a target, and
 its large early gradient derails training. Not a useful lever as formulated. (A faithful version would
 need vertex-accurate FK + the true 60fps synthesis, i.e. mesh FK every step — too costly here.)
+
+### Rigid-body physics refinement (PIP/PNP-style, exp33) — NEUTRAL once implemented correctly
+
+Implemented a reduced-coordinate articulated simulator (`imuposer/physics/rigidbody.py`): per-joint
+critically-damped 2nd-order rotational dynamics, PD-actuated toward the network pose, segment masses
+∝ bone length, semi-implicit integration; applied test-time via `PHYS_REFINE=1` (eval metric untouched).
+
+- **First (buggy) run scored 31.09 vs 26.79 — a spurious +4.3° regression** from TWO bugs: (1) the
+  body-frame PD error was integrated with a world-frame (left) rotation update → mistracking; (2) gravity
+  was applied as a raw disturbance with no feedforward COMPENSATION, so the finite-gain PD left a
+  steady-state gravity **sag**. Both are implementation flaws, not "physics hurts."
+- **Fixed** (right-multiply `R @ exp(ω·dt)`; gravity-compensated ≈ gravity-off): refinement is
+  **NEUTRAL — 26.83 (ω0=80) / 26.86 (ω0=40) vs 26.79**, and ±0.05 on every metric. The corrected sim
+  is a clean inertial smoother that neither helps nor hurts root-relative rotation.
+- **Why neutral here (consistent with the literature):** PIP/PhysCap/SimPoE gains come from global
+  TRANSLATION, foot-CONTACT/skating, and temporal JITTER. Our protected eval is **root-relative rotation
+  with no translation**, so contact (a world-space foot-velocity=0 constraint needing global translation
+  we don't predict) can't be applied, and there's little jitter for smoothing to fix. PIP's own
+  root-relative SIP gain is small and comes from joint physics-training + contact, not a post-hoc passive
+  pass on a frozen model. Faithfully capturing the physics win would require predicting translation +
+  modeling contact + (ideally) training with physics in the loop — a larger build than a refinement.
