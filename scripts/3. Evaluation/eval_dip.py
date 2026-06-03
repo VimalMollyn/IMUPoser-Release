@@ -74,6 +74,8 @@ def main():
         config.model = "TransformerIMUPoser"
     elif any(k.startswith("net.blocks.") for k in sd):
         config.model = "CNN1DIMUPoser"
+    elif "codebook" in sd:
+        config.model = "CodebookIMUPoser"
     model = get_model(config)
     # strict=False tolerates ONLY the (non-learned) sinusoidal positional-encoding buffer, which is
     # computed on the fly now; assert nothing else is missing/unexpected so real weight mismatches fail.
