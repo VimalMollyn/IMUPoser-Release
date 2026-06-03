@@ -24,17 +24,25 @@ from imuposer.config import Config
 
 
 class _SinusoidalPE(nn.Module):
+    r"""Sinusoidal positional encoding computed on the fly for ANY sequence length.
+
+    Training windows are short (<=125 frames) but eval feeds whole DIP sequences (thousands of
+    frames), so the encoding must extend to arbitrary T. It's a fixed function (no learned params),
+    so weights trained under an older fixed-length buffer are bit-identical for positions they saw.
+    """
     def __init__(self, d_model, max_len=1024):
         super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        pos = torch.arange(max_len).unsqueeze(1).float()
+        self.d_model = d_model
         div = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(pos * div)
-        pe[:, 1::2] = torch.cos(pos * div)
-        self.register_buffer("pe", pe.unsqueeze(0))  # 1, max_len, d_model
+        self.register_buffer("_div", div, persistent=False)  # non-persistent: never in state_dict
 
     def forward(self, x):  # x: B,T,d
-        return x + self.pe[:, :x.size(1)]
+        T = x.size(1)
+        ang = torch.arange(T, device=x.device).unsqueeze(1).float() * self._div  # T, d/2
+        pe = torch.zeros(T, self.d_model, device=x.device)
+        pe[:, 0::2] = torch.sin(ang)
+        pe[:, 1::2] = torch.cos(ang)
+        return x + pe.unsqueeze(0)
 
 
 class _TransformerNet(nn.Module):
@@ -98,7 +106,21 @@ class TransformerIMUPoser(pl.LightningModule):
             self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
 
     def forward(self, imu_inputs, imu_lens):
-        return self.net(imu_inputs, imu_lens)
+        T = imu_inputs.size(1)
+        W = int(os.environ.get("TF_EVAL_WINDOW", "125"))   # = training window (max_sample_len*25//60)
+        # Train (and short inputs): full attention over the window, as trained.
+        # Eval on long DIP sequences: a transformer trained on <=125-frame windows does NOT
+        # generalize to thousands of frames (attention/PE extrapolation), so slide a training-length
+        # window — like TIP and other real-time IMU transformers — instead of attending over the
+        # whole take at once. Non-overlapping chunks match the training length distribution.
+        if self.training or T <= W:
+            return self.net(imu_inputs, imu_lens)
+        outs = []
+        for s in range(0, T, W):
+            chunk = imu_inputs[:, s:s + W]
+            clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
+            outs.append(self.net(chunk, clen))
+        return torch.cat(outs, dim=1)
 
     def _step(self, batch):
         imu, target, lens, _ = batch

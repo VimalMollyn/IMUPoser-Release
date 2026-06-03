@@ -120,6 +120,21 @@ class DiffusionIMUPoser(pl.LightningModule):
     # ---- inference: DDIM sampling conditioned on the IMU ----
     @torch.no_grad()
     def forward(self, imu_inputs, imu_lens):
+        T = imu_inputs.size(1)
+        W = int(os.environ.get("TF_EVAL_WINDOW", "125"))   # = training window
+        # Same length-generalization fix as the transformer: the denoiser was trained on <=125-frame
+        # windows, so sample in training-length chunks rather than over the whole take at once.
+        if T <= W:
+            return self._sample(imu_inputs, imu_lens)
+        outs = []
+        for s in range(0, T, W):
+            chunk = imu_inputs[:, s:s + W]
+            clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
+            outs.append(self._sample(chunk, clen))
+        return torch.cat(outs, dim=1)
+
+    @torch.no_grad()
+    def _sample(self, imu_inputs, imu_lens):
         B, T, _ = imu_inputs.shape
         dev = imu_inputs.device
         pad = self._pad_mask(imu_lens, T, dev)
