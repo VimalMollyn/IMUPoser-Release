@@ -424,3 +424,13 @@ kinematic. (AUG_ACC_BIAS/SCALE added.) If that's also neutral, data-realism = ca
 - **5-IMU teacher accuracy** (dip_train val): global(5-IMU) SIP 25.07 / Angle 19.46 / Joint 8.83cm —
   ~1.7° SIP and ~3.4° Angle better than the best 3-IMU students (~26.8/22.9). That headroom = the
   privileged-info gap the 5-IMU->3-IMU distillation (exp53) aims to transfer to the lw_rp_h student.
+
+### Distillation (DISTILL_W=1) and accel-realism both HURT at seed1
+- **5-IMU teacher -> 3-IMU distillation, DISTILL_W=1: 27.71 (+0.92 vs LSTM 26.79).** The teacher predicts
+  pose using sensors (rw, lp) the 3-IMU student lacks, so matching its full pose forces the student toward
+  un-inferable DOFs; W=1 also over-weights it. -> testing GENTLE DISTILL_W (soft hint) + seed2.
+- **accel-realism (bias0.02/scale0.03): 27.42 (+0.63).** Another realism-augmentation that doesn't beat
+  calibration (like gyro drift) -> the realism gain is captured by static calibration; extra IMU-imperfection
+  augmentation just adds noise.
+- bigger-LSTM nulls + these confirm: the lever is sensor-realism via CALIBRATION + the IK loss; capacity,
+  drift, accel-noise, naive distillation don't help.

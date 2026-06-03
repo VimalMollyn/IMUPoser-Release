@@ -83,7 +83,8 @@ def main():
     # strict=False tolerates ONLY the (non-learned) sinusoidal positional-encoding buffer, which is
     # computed on the fly now; assert nothing else is missing/unexpected so real weight mismatches fail.
     inc = model.load_state_dict(sd, strict=False)
-    bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys) if ".pe" not in k and "_div" not in k]
+    bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys)
+           if ".pe" not in k and "_div" not in k and "_teacher" not in k]  # _teacher: frozen distill teacher, unused at eval
     assert not bad, f"state_dict mismatch beyond positional encoding: {bad}"
     model.eval().to(dev)
     # optional PIP/PNP-style rigid-body physics refinement of the predicted pose (test-time only;
