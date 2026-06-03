@@ -229,3 +229,22 @@ unsafe — our fresh baselines land at 28.1–28.3, not exp6's recorded 27.48).
 floor. The decisive methodological lesson is that **single-run comparisons below ~1.5° are unreliable
 here** — the field's habit of reporting one run hides this. Calibration-error augmentation (−4.3°) remains
 the only established lever; further gains likely need a different data/realism axis, not architecture.
+
+### Transformer (TIP-style) and Diffusion (EgoEgo-style) — bigger model-family swaps
+
+| model | seed1 SIP | seed2 SIP | LSTM seed-matched | verdict |
+|---|---|---|---|---|
+| **TransformerIMUPoser** (exp16/17, 60 ep) | 28.11 | 26.98 | 26.79 / 26.93 | **≈ LSTM, worse at seed1** |
+
+- **A transformer does NOT beat the LSTM here**, even given 2× the epochs (60 vs 30). seed1 is +1.32°
+  worse, seed2 is +0.05° (a tie); the 28.11↔26.98 transformer spread is itself ~1.1° (noise). With only
+  ~31k short (≤125-frame) training windows, the LSTM's recurrent inductive bias wins; attention has too
+  little data/sequence-length to pay off.
+- **Length-generalization gotcha (important):** a transformer trained on ≤125-frame windows scores
+  SIP **40.3** when eval feeds the whole 3000+-frame DIP take (full self-attention + sinusoidal PE don't
+  extrapolate), but **28.1** with a sliding 125-frame window at inference. Its *windowed val_loss was
+  healthy the whole time* — the failure was purely train/eval sequence-length mismatch. The LSTM is
+  immune (recurrence is length-agnostic), which is itself a practical argument for it here. Fix is
+  model-side sliding-window inference (`TF_EVAL_WINDOW`), like TIP / real-time IMU transformers; the
+  protected evaluator is unchanged.
+- **DiffusionIMUPoser (EgoEgo-style)** results pending (exp18/19) — same windowed-sampling fix applied.
