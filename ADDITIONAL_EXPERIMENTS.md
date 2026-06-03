@@ -344,3 +344,25 @@ critically-damped 2nd-order rotational dynamics, PD-actuated toward the network 
   the smoothness improvement physics-based methods report. So physics helps the dimension it's meant to;
   our root-relative-rotation eval just doesn't score jitter/translation/contact. (Net: not a SIP lever
   *for this metric*, but the simulator is correct and behaves as the literature predicts.)
+
+### Translation aux (predict root velocity) HURTS pose (exp34/35/37)
+
+User hypothesis: predicting translation should help body pose (multi-task). Tested LSTM + a per-frame
+root-VELOCITY head (absolute position is unobservable from IMU; velocity is the learnable TransPose-style
+target), trained on AMASS (DIP's tran is ~0). Result vs plain LSTM (26.79/26.93):
+- TRANS_W=10: 28.34 (s1) / 27.98 (s2) -> +1.5 / +1.0 WORSE
+- TRANS_W=1 (gentle): 28.05 (s1) -> +1.26 WORSE
+Weight-independent degradation => the velocity task genuinely competes with / distracts the shared LSTM
+from joint-rotation features. Predicting translation as a shared-trunk multi-task aux does NOT help (hurts)
+this root-relative pose metric. (A separate translation *decoder* off frozen pose features might differ,
+but the multi-task-helps-pose hypothesis is refuted here.)
+
+### Activity-conditioned pose (predict activity -> condition pose) is NEUTRAL (exp36/38)
+
+User hypothesis: predict the activity first, condition pose on it. No activity labels exist, so used
+pseudo-activities (k-means K=16 on mean-pose); ActivityIMUPoser predicts the activity from window-pooled
+IMU (CE vs pseudo-label) and conditions a 2nd pose RNN on the predicted-activity embedding. Result vs
+plain LSTM (26.79/26.93): seed1 26.63 (-0.16), seed2 27.26 (+0.33) -> mean ~neutral, inconsistent,
+within the ~1.5deg noise floor (and Angle/Joint slightly worse). Like staged / IK-on-LSTM: the explicit
+high-level bottleneck doesn't add information the LSTM doesn't already extract. (Real activity labels +
+a stronger activity signal might differ, but pseudo-activity conditioning is neutral here.)
