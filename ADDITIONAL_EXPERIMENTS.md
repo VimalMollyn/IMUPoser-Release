@@ -394,3 +394,14 @@ not root-relative SIP), translation multi-task (hurts), activity-conditioning (n
 everything; (b) bigger/fancier backbones don't help at ~31k windows; the LSTM's recurrent inductive
 bias + sensor-realism augmentation is the recipe. Remaining lever is data realism (GlobalPose ESKF
 synthesis / physics-simulated IMU) or predicting translation+contact with a metric that scores them.
+
+## FINAL held-out TEST (dip_test, lw_rp_h) — selected on val, reported on test once
+3-seed val: AvatarPoser SIP 26.78 vs LSTM 27.03 (-0.25, noise); Angle 21.98 vs 23.12 (-1.14, all 3 seeds).
+Held-out dip_test (seeds 1/2):
+| model | SIP | Angle | Joint cm | Vert cm |
+|---|---|---|---|---|
+| LSTM (calib recipe) | 25.29 / 25.40 | 22.33 / 22.29 | 9.71 / 9.47 | 11.72 / 11.44 |
+| AvatarPoser (transformer+IK) | 25.07 / 25.81 | 21.33 / 20.86 | 9.32 / 9.21 | 11.35 / 11.12 |
+On test, AvatarPoser ties SIP but is consistently better on Angle (-1.2deg), Joint (-0.3cm), Vert
+(-0.3cm) -> the IK orientation-consistency lever GENERALIZES to held-out subjects. Final pipeline:
+bidirectional-LSTM (or transformer+IK) + calibration-error augmentation + curated-12 datasets, AMASS-only.
