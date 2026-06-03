@@ -62,7 +62,7 @@ class IMUPoserModel(pl.LightningModule):
         else:
             self.loss = nn.L1Loss()
 
-        self.lr = 3e-4
+        self.lr = float(os.environ.get("LR", "3e-4"))   # LR / OPTIMIZER / WEIGHT_DECAY / LR_SCHED knobs
 
         # PyTorch Lightning >= 2.0 removed the `outputs` argument from the epoch-end
         # hooks, so we accumulate per-step losses ourselves.
@@ -203,4 +203,19 @@ class IMUPoserModel(pl.LightningModule):
         self.log(f"{loop_type}_loss", avg_loss, prog_bar=True, batch_size=self.batch_size)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        opt_name = os.environ.get("OPTIMIZER", "adam").lower()
+        wd = float(os.environ.get("WEIGHT_DECAY", "0"))
+        if opt_name == "adamw":
+            opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=(wd or 1e-4))
+        elif opt_name == "sgd":
+            opt = torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=wd, nesterov=True)
+        elif opt_name == "rmsprop":
+            opt = torch.optim.RMSprop(self.parameters(), lr=self.lr, weight_decay=wd)
+        elif opt_name == "radam":
+            opt = torch.optim.RAdam(self.parameters(), lr=self.lr, weight_decay=wd)
+        else:
+            opt = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=wd)
+        if os.environ.get("LR_SCHED", "") == "cosine":
+            sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=int(os.environ.get("EPOCHS", "30")))
+            return {"optimizer": opt, "lr_scheduler": sched}
+        return opt
