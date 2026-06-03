@@ -366,3 +366,31 @@ plain LSTM (26.79/26.93): seed1 26.63 (-0.16), seed2 27.26 (+0.33) -> mean ~neut
 within the ~1.5deg noise floor (and Angle/Joint slightly worse). Like staged / IK-on-LSTM: the explicit
 high-level bottleneck doesn't add information the LSTM doesn't already extract. (Real activity labels +
 a stronger activity signal might differ, but pseudo-activity conditioning is neutral here.)
+
+### AvatarPoser IK loss = the 2nd real lever (reliably improves Angle/Joint/Vert) — IK-weight sweep
+
+AvatarPoser (transformer + IK orientation-consistency) vs LSTM (26.79/26.93), across IK weights & seeds:
+| AP_IK_W | seed1 SIP | seed2 SIP | Angle (s1/s2) | vs LSTM Angle 22.94/22.76 |
+|---|---|---|---|---|
+| 1 | 26.48 | 26.56 | 22.10 / 21.22 | -0.8 / -1.5 |
+| 2 | 26.85 | 26.45 | 21.70 / 21.44 | -1.2 / -1.3 |
+SIP is noisy (≈ LSTM to -0.5) but **Angle is consistently ~1deg better, and Joint/Vert ~0.3cm better,
+across all 4 runs**. The IK orientation-consistency loss (predicted FK joint orientations must match
+observed sensor orientations) is a genuine lever on global-angle + position metrics; W=1 is best for SIP.
+It only helps on the *transformer* (IK-on-LSTM was inconsistent — the LSTM already encodes the constraint).
+
+## SUMMARY (autonomous run, ~40 experiments)
+**Only TWO levers reliably beat the well-tuned bidirectional LSTM, both about sensor/geometry realism:**
+1. **Calibration-error augmentation: -4.3deg SIP** (32.5 -> 28.2). The big one. Models real-IMU mounting
+   error our perfect-FK orientation lacks.
+2. **AvatarPoser-style IK orientation-consistency loss** (on a transformer): ~-1deg Angle, ~-0.3cm
+   Joint/Vert (SIP within noise). Geometric grounding for the attention backbone.
+
+**Did NOT beat the LSTM (≤ it or worse), all seed-replicated:** transformer (TIP), diffusion (EgoEgo),
+1D-CNN, codebook/VQ (AI4Animation), deeper variants, missing-IMU reconstruction, staged/cascaded,
+IK-on-LSTM, acceleration-consistency (hurts), rigid-body physics refinement (neutral; cuts jitter but
+not root-relative SIP), translation multi-task (hurts), activity-conditioning (neutral).
+**Meta-findings:** (a) noise floor is ~1.5deg SIP (seed + CuDNN nondeterminism) — seed-replicate
+everything; (b) bigger/fancier backbones don't help at ~31k windows; the LSTM's recurrent inductive
+bias + sensor-realism augmentation is the recipe. Remaining lever is data realism (GlobalPose ESKF
+synthesis / physics-simulated IMU) or predicting translation+contact with a metric that scores them.
