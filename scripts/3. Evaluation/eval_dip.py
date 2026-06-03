@@ -92,6 +92,21 @@ def main():
     if os.environ.get("PHYS_REFINE"):
         from imuposer.physics import PhysicsRefineWrapper
         model = PhysicsRefineWrapper(model, ParametricModel(config.og_smpl_model_path, device="cpu"))
+    # SEED-ENSEMBLE: average the r6d pose of this checkpoint + ENSEMBLE_CKPTS (same architecture).
+    # Reduces the seed/CuDNN variance (the ~1.5deg noise floor). Eval-construction only; metric unchanged.
+    if os.environ.get("ENSEMBLE_CKPTS"):
+        members = [model]
+        for cp in os.environ["ENSEMBLE_CKPTS"].split(","):
+            m2 = get_model(config)
+            inc2 = m2.load_state_dict(torch.load(cp, map_location=dev, weights_only=False)["state_dict"], strict=False)
+            assert not [k for k in list(inc2.missing_keys) + list(inc2.unexpected_keys)
+                        if all(t not in k for t in (".pe", "_div", "_teacher"))], "ensemble ckpt mismatch"
+            members.append(m2.eval().to(dev))
+
+        class _Ensemble(torch.nn.Module):
+            def __init__(self, ms): super().__init__(); self.ms = ms
+            def forward(self, x, lens): return sum(m(x, lens)[:, :, :144] for m in self.ms) / len(self.ms)
+        model = _Ensemble(members)
 
     def metrics(pred_rot, gt_rot):
         p, t = pred_rot.clone(), gt_rot.clone()

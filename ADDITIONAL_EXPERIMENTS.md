@@ -441,3 +441,10 @@ weight-independent. The 3-IMU student cannot match the 5-IMU teachers pose on DO
 sensors (rw, lp), so any pull toward the teacher wastes its limited capacity. Naive privileged distillation
 does not transfer the 5-IMU headroom here. (Selective distillation on only the inferable joints might, but
 the consistent weight-independent hurt suggests the gap is fundamental to the sensor set.)
+
+### Window length + seed-ensemble
+- **Shorter window hurts**: 2.5s (MAX_SAMPLE_LEN=150) -> 28.01 vs 5s default 26.79. More temporal context
+  helps (10s result pending). The 5s default is good.
+- **Seed-ensemble is a real (small) free lunch**: AvatarPoser 3-seed ensemble -> val SIP 26.42 / Angle
+  21.61, test SIP 25.22 / Angle 20.93 (vs single-seed mean 26.78 / 21.98) -- ~-0.36 SIP, -0.37 Angle by
+  cutting the seed/CuDNN variance. Best config to date. (ENSEMBLE_CKPTS in eval_dip.)
