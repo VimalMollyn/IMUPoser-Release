@@ -16,6 +16,7 @@ Usage:
   uv run python "scripts/3. Evaluation/eval_dip.py" --checkpoint <ckpt.pt> [--combos lw_rp_h]
 """
 import argparse
+import os
 from pathlib import Path
 import numpy as np
 import torch
@@ -83,6 +84,11 @@ def main():
     bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys) if ".pe" not in k and "_div" not in k]
     assert not bad, f"state_dict mismatch beyond positional encoding: {bad}"
     model.eval().to(dev)
+    # optional PIP/PNP-style rigid-body physics refinement of the predicted pose (test-time only;
+    # the metric below is unchanged — it scores the refined pose). Physics runs on a CPU body model.
+    if os.environ.get("PHYS_REFINE"):
+        from imuposer.physics import PhysicsRefineWrapper
+        model = PhysicsRefineWrapper(model, ParametricModel(config.og_smpl_model_path, device="cpu"))
 
     def metrics(pred_rot, gt_rot):
         p, t = pred_rot.clone(), gt_rot.clone()
