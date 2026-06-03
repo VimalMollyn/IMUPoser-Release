@@ -27,6 +27,13 @@ class IMUPoserModel(pl.LightningModule):
         self.distill_teacher = os.environ.get("DISTILL_TEACHER")
         self.distill_w = float(os.environ.get("DISTILL_W", "1.0"))
         self._teacher = None
+        # SELECTIVE_DISTILL=1: only distill the joints lw_rp_h CAN infer (have a nearby sensor: head/spine,
+        # left arm via lw, right leg via rp, root); mask the un-inferable right-arm/left-leg (no rw/lp),
+        # which naive distillation forced the student toward and wasted capacity on.
+        self.distill_selective = bool(os.environ.get("SELECTIVE_DISTILL"))
+        _inferable = [0, 2, 3, 5, 6, 8, 9, 11, 12, 13, 15, 16, 18, 20]
+        _jw = torch.zeros(24); _jw[_inferable] = 1.0
+        self.register_buffer("distill_jw", _jw.repeat_interleave(6), persistent=False)  # 144-d (r6d)
 
         n_output_joints = len(config.pred_joints_set)
         self.n_output_joints = n_output_joints
@@ -209,6 +216,9 @@ class IMUPoserModel(pl.LightningModule):
         # teacher pose from the full clean 5-IMU (AUX_TARGET=imu), match it (privileged distillation)
         with torch.no_grad():
             tp = self._teacher(full_imu, lens)[0][:, :, :self.n_pose_output]
+        if self.distill_selective:
+            w = self.distill_jw.to(student_pose.device)
+            return self.distill_w * self.loss(student_pose * w, tp * w)
         return self.distill_w * self.loss(student_pose, tp)
 
     def on_train_epoch_end(self):
