@@ -33,7 +33,10 @@ class IMUPoserModel(pl.LightningModule):
 
         self.batch_size = config.batch_size
 
-        self.dip_model = RNN(n_input=n_input, n_output=n_output, n_hidden=512, bidirectional=True)
+        # LSTM_HIDDEN / LSTM_LAYERS knobs for the capacity-check experiment (default 512 / 2 = baseline)
+        _h = int(os.environ.get("LSTM_HIDDEN", "512"))
+        _l = int(os.environ.get("LSTM_LAYERS", "2"))
+        self.dip_model = RNN(n_input=n_input, n_output=n_output, n_hidden=_h, n_rnn_layer=_l, bidirectional=True)
 
         self.config = config
 
