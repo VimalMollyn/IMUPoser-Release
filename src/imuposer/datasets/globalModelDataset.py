@@ -63,6 +63,7 @@ class GlobalModelDataset(Dataset):
         # random-walk rate (rad/s/sqrt(s)); AUG_GYRO_N = white gyro noise (rad/s). Vectorized via cumsum.
         self.aug_gyro_rw = float(os.environ.get("AUG_GYRO_RW", "0"))
         self.aug_gyro_n = float(os.environ.get("AUG_GYRO_N", "0"))
+        self.aug_gyro_yawonly = bool(os.environ.get("AUG_GYRO_YAWONLY"))  # ESKF tilt-correction: drift yaw only
         self.data = self.load_data()
 
     def load_data(self):
@@ -177,6 +178,10 @@ class GlobalModelDataset(Dataset):
                     bias = torch.cumsum(torch.randn(W, 3) * self.aug_gyro_rw * (dt ** 0.5), dim=0)  # rad/s
                     noise = torch.randn(W, 3) * self.aug_gyro_n                                      # rad/s
                     d = torch.cumsum((bias + noise) * dt, dim=0)               # accumulated drift rot-vec (W,3)
+                    if self.aug_gyro_yawonly:
+                        # ESKF/accelerometer tilt-correction: real IMUs correct pitch/roll via gravity,
+                        # leaving only YAW (world-up = Y axis) to drift. Keep only the up-axis component.
+                        d = d * torch.tensor([0., 1., 0.])
                     D = math.axis_angle_to_rotation_matrix(d)                  # (W,3,3)
                     _combo_ori[:, c] = torch.matmul(D, _combo_ori[:, c])
             if self.aug_acc_std > 0:
