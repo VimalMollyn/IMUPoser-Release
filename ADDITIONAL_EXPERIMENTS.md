@@ -434,3 +434,10 @@ kinematic. (AUG_ACC_BIAS/SCALE added.) If that's also neutral, data-realism = ca
   augmentation just adds noise.
 - bigger-LSTM nulls + these confirm: the lever is sensor-realism via CALIBRATION + the IK loss; capacity,
   drift, accel-noise, naive distillation don't help.
+
+### Distillation full weight sweep -> NULL (5->3 IMU gap is fundamental)
+DISTILL_W 0.2/0.5/1.0 x 2 seeds all land 27.2-27.9 vs LSTM 26.79/26.93 = consistently +0.7 to +1.0 WORSE,
+weight-independent. The 3-IMU student cannot match the 5-IMU teachers pose on DOFs that need the missing
+sensors (rw, lp), so any pull toward the teacher wastes its limited capacity. Naive privileged distillation
+does not transfer the 5-IMU headroom here. (Selective distillation on only the inferable joints might, but
+the consistent weight-independent hurt suggests the gap is fundamental to the sensor set.)
