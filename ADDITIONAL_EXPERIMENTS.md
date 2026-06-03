@@ -417,3 +417,10 @@ DRIFT on top (random-walk bias + noise), both all-axis and ESKF yaw-only:
 calibration already captures it, and extra drift just adds noise. Orientation-realism lever exhausted.
 Next data-realism axis: accelerometer realism (bias/scale/noise) — the accel is currently perfectly
 kinematic. (AUG_ACC_BIAS/SCALE added.) If that's also neutral, data-realism = calibration only.
+
+### Capacity & distillation (afternoon)
+- **Bigger LSTM doesn't help** (capacity null, not data-limited): hidden 768 -> 27.69, 1024 -> 27.01 vs
+  512 baseline 26.79 (worse-to-neutral; more params overfit).
+- **5-IMU teacher accuracy** (dip_train val): global(5-IMU) SIP 25.07 / Angle 19.46 / Joint 8.83cm —
+  ~1.7° SIP and ~3.4° Angle better than the best 3-IMU students (~26.8/22.9). That headroom = the
+  privileged-info gap the 5-IMU->3-IMU distillation (exp53) aims to transfer to the lw_rp_h student.
