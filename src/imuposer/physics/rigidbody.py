@@ -101,7 +101,8 @@ def physics_refine(R_local, model, device=None):
             err = _logmap(torch.einsum('jab,jbc->jac', R.transpose(-1, -2), tgt))   # body-frame error
             alpha = omega0 ** 2 * err - 2 * zeta * omega0 * w + tau_g_local / I[:, None]
             w_new = w + alpha * dt
-            R_new = torch.einsum('jab,jbc->jac', _expmap(w_new * dt), R)
+            # body-frame angular velocity -> RIGHT-multiply (R @ exp), matching the body-frame error
+            R_new = torch.einsum('jab,jbc->jac', R, _expmap(w_new * dt))
             w = torch.where(sim[:, None], w_new, torch.zeros_like(w))
             R = torch.where(sim[:, None, None], R_new, tgt)
         out[t] = R
