@@ -405,3 +405,15 @@ Held-out dip_test (seeds 1/2):
 On test, AvatarPoser ties SIP but is consistently better on Angle (-1.2deg), Joint (-0.3cm), Vert
 (-0.3cm) -> the IK orientation-consistency lever GENERALIZES to held-out subjects. Final pipeline:
 bidirectional-LSTM (or transformer+IK) + calibration-error augmentation + curated-12 datasets, AMASS-only.
+
+### Data-realism: gyro-drift orientation does NOT help beyond static calibration (exp45-48)
+The calibration win (-4.3°) is a STATIC orientation offset. Tested adding realistic gyro-integration
+DRIFT on top (random-walk bias + noise), both all-axis and ESKF yaw-only:
+| drift | SIP vs LSTM+calib 26.79 |
+|---|---|
+| all-axis rw=0.01 / 0.02 | 26.97 / 27.18 (neutral-to-worse) |
+| yaw-only rw=0.02 / 0.04 | 27.41 / 28.19 (worse) |
+=> the sim-to-real orientation gap is dominated by STATIC mounting/calibration error, not dynamic drift;
+calibration already captures it, and extra drift just adds noise. Orientation-realism lever exhausted.
+Next data-realism axis: accelerometer realism (bias/scale/noise) — the accel is currently perfectly
+kinematic. (AUG_ACC_BIAS/SCALE added.) If that's also neutral, data-realism = calibration only.

@@ -48,6 +48,11 @@ class GlobalModelDataset(Dataset):
         self.augment = False
         self.aug_acc_std = float(os.environ.get("AUG_ACC_STD", "0"))
         self.aug_ori_std = float(os.environ.get("AUG_ORI_STD", "0"))
+        # accelerometer realism (scaled units, i.e. m/s^2 / acc_scale): per-sensor constant BIAS and
+        # per-axis SCALE-factor error (constant over the window), the imperfections our perfect kinematic
+        # accel lacks. AUG_ACC_BIAS ~0.02 (~0.6 m/s^2), AUG_ACC_SCALE ~0.03 (3% gain error).
+        self.aug_acc_bias = float(os.environ.get("AUG_ACC_BIAS", "0"))
+        self.aug_acc_scale = float(os.environ.get("AUG_ACC_SCALE", "0"))
         # GlobalPose-style per-sensor calibration / mounting rotation error (radians,
         # per-axis std; constant over a window). Real IMUs are mis-mounted/mis-calibrated
         # vs the body segment, which our perfect FK orientation lacks. GlobalPose uses
@@ -184,6 +189,13 @@ class GlobalModelDataset(Dataset):
                         d = d * torch.tensor([0., 1., 0.])
                     D = math.axis_angle_to_rotation_matrix(d)                  # (W,3,3)
                     _combo_ori[:, c] = torch.matmul(D, _combo_ori[:, c])
+            # accelerometer bias (constant per sensor) + per-axis scale-factor error (constant per sensor)
+            if self.aug_acc_bias > 0 or self.aug_acc_scale > 0:
+                for c in combo:
+                    if self.aug_acc_scale > 0:
+                        _combo_acc[:, c] = _combo_acc[:, c] * (1 + torch.randn(3) * self.aug_acc_scale)
+                    if self.aug_acc_bias > 0:
+                        _combo_acc[:, c] = _combo_acc[:, c] + torch.randn(3) * self.aug_acc_bias
             if self.aug_acc_std > 0:
                 _combo_acc[:, combo] += torch.randn_like(_combo_acc[:, combo]) * self.aug_acc_std
             if self.aug_ori_std > 0:
