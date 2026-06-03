@@ -247,4 +247,20 @@ the only established lever; further gains likely need a different data/realism a
   immune (recurrence is length-agnostic), which is itself a practical argument for it here. Fix is
   model-side sliding-window inference (`TF_EVAL_WINDOW`), like TIP / real-time IMU transformers; the
   protected evaluator is unchanged.
-- **DiffusionIMUPoser (EgoEgo-style)** results pending (exp18/19) — same windowed-sampling fix applied.
+| **DiffusionIMUPoser** (exp18/19, 60 ep) | 32.84 | 32.40 | 26.79 / 26.93 | **far worse (+~6°)** |
+
+- **A conditional diffusion model is clearly NOT competitive here** (~32–33° SIP, ~6° worse than the
+  LSTM; ≈ the no-aug baseline). 10-sample averaging (→ conditional mean) helps but only to 31.0 — still
+  +4.2°. EgoEgo-style diffusion is built for *plausible, diverse* full-body motion from head pose;
+  sparse-IMU→pose for a per-frame accuracy metric (SIP) is a well-constrained regression where a single
+  generative sample is just high-variance and direct regression wins. (It is likely also undertrained at
+  60 ep — diffusion typically needs far more — and per-window independent sampling drops temporal
+  continuity; but the ~6° gap and wrong-tool-for-the-metric argument make chasing it low-value.)
+
+**Overall (exp8–19): NO architecture or model family beats the well-tuned bidirectional LSTM.**
+recon ≈ +0.3, staged ≈ 0, transformer ≈ 0-to-worse, diffusion ≈ +6 (all ΔSIP vs seed-matched LSTM).
+The LSTM's recurrent inductive bias fits short-window sparse-IMU regression with ~31k windows; it is
+also length-agnostic (transformers needed a sliding-window-inference fix; the LSTM did not). The single
+established lever remains **calibration-error augmentation (−4.3°)**. Remaining levers are the data/realism
+axis (more faithful synthetic-IMU generation) or shrinking the ~1.5° noise floor (deterministic training +
+seed-averaging) so finer effects become detectable — not bigger models.

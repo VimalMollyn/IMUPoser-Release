@@ -120,6 +120,18 @@ class DiffusionIMUPoser(pl.LightningModule):
     # ---- inference: DDIM sampling conditioned on the IMU ----
     @torch.no_grad()
     def forward(self, imu_inputs, imu_lens):
+        # DIFF_SAMPLE_AVG>1 averages K independent DDIM samples -> approaches the conditional MEAN
+        # pose, the right point estimate for a per-frame accuracy metric (a single generative sample
+        # is high-variance). Averaging r6d then orthonormalizing (in the evaluator) is the usual trick.
+        K = int(os.environ.get("DIFF_SAMPLE_AVG", "1"))
+        if K == 1:
+            return self._windowed(imu_inputs, imu_lens)
+        acc = self._windowed(imu_inputs, imu_lens)
+        for _ in range(K - 1):
+            acc = acc + self._windowed(imu_inputs, imu_lens)
+        return acc / K
+
+    def _windowed(self, imu_inputs, imu_lens):
         T = imu_inputs.size(1)
         W = int(os.environ.get("TF_EVAL_WINDOW", "125"))   # = training window
         # Same length-generalization fix as the transformer: the denoiser was trained on <=125-frame
