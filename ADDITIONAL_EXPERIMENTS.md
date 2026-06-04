@@ -448,3 +448,18 @@ the consistent weight-independent hurt suggests the gap is fundamental to the se
 - **Seed-ensemble is a real (small) free lunch**: AvatarPoser 3-seed ensemble -> val SIP 26.42 / Angle
   21.61, test SIP 25.22 / Angle 20.93 (vs single-seed mean 26.78 / 21.98) -- ~-0.36 SIP, -0.37 Angle by
   cutting the seed/CuDNN variance. Best config to date. (ENSEMBLE_CKPTS in eval_dip.)
+
+## FINAL CONSOLIDATED RESULT (diverse heterogeneous ensemble)
+Distillation/window/capacity/optimizer all null. Best achievable = the two levers (calibration aug + IK
+loss) + DIVERSE ensembling. A heterogeneous ensemble (LSTM x3 + AvatarPoser/transformer+IK x5, 8 models)
+beats every single model and every same-model ensemble -- decorrelated errors across architectures.
+
+| config | val SIP | val Angle | test SIP | test Angle | test Joint cm |
+|---|---|---|---|---|---|
+| plain LSTM (single) | 26.79 | 22.94 | ~25.3 | 22.3 | 9.6 |
+| AvatarPoser 3-seed ens | 26.42 | 21.61 | 25.22 | 20.93 | 9.27 |
+| **DIVERSE LSTMx3+Avatarx5** | **26.10** | 21.53 | **24.67** | **20.92** | **9.08** |
+
+Net improvement over the plain LSTM baseline: test SIP -0.6deg, Angle -1.4deg, Joint -0.5cm.
+Recipe: AMASS-only lw_rp_h, curated-12 datasets, calibration-error aug (AUG_CALIB_RAD=0.12), AvatarPoser
+IK loss for the transformer members, multi-seed + cross-architecture ensembling. (ENSEMBLE_CKPTS in eval_dip.)
