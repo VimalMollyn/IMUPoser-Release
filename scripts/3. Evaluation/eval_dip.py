@@ -64,44 +64,39 @@ def main():
     # built before loading. This only affects which nn.Module is instantiated; the metric
     # computation below (and the protected forward(...)[:, :, :144] pose contract) is
     # identical for every architecture.
-    sd = torch.load(args.checkpoint, map_location=dev, weights_only=False)["state_dict"]
-    if any(k.startswith("recon_rnn.") for k in sd):
-        config.model = "ReconIMUPoser"
-    elif any(k.startswith("joint_rnn.") for k in sd):
-        config.model = "StagedIMUPoser"
-    elif any(k.startswith("net.step_mlp.") for k in sd):
-        config.model = "DiffusionIMUPoser"
-    elif any(k.startswith("net.enc.") for k in sd):
-        config.model = "TransformerIMUPoser"
-    elif any(k.startswith("net.blocks.") for k in sd):
-        config.model = "CNN1DIMUPoser"
-    elif "codebook" in sd:
-        config.model = "CodebookIMUPoser"
-    elif any(k.startswith("act_head.") for k in sd):
-        config.model = "ActivityIMUPoser"
-    model = get_model(config)
-    # strict=False tolerates ONLY the (non-learned) sinusoidal positional-encoding buffer, which is
-    # computed on the fly now; assert nothing else is missing/unexpected so real weight mismatches fail.
-    inc = model.load_state_dict(sd, strict=False)
-    bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys)
-           if ".pe" not in k and "_div" not in k and "_teacher" not in k]  # _teacher: frozen distill teacher, unused at eval
-    assert not bad, f"state_dict mismatch beyond positional encoding: {bad}"
-    model.eval().to(dev)
+    def _detect_model(sd):
+        if any(k.startswith("recon_rnn.") for k in sd): return "ReconIMUPoser"
+        if any(k.startswith("joint_rnn.") for k in sd): return "StagedIMUPoser"
+        if any(k.startswith("net.step_mlp.") for k in sd): return "DiffusionIMUPoser"
+        if any(k.startswith("net.enc.") for k in sd): return "TransformerIMUPoser"
+        if any(k.startswith("net.blocks.") for k in sd): return "CNN1DIMUPoser"
+        if "codebook" in sd: return "CodebookIMUPoser"
+        if any(k.startswith("act_head.") for k in sd): return "ActivityIMUPoser"
+        return "GlobalModelIMUPoser"
+
+    def _build(sd):
+        # auto-detect architecture per checkpoint -> heterogeneous ensembles work. strict=False tolerates
+        # only the non-learned PE buffer / frozen distill teacher; real weight mismatches still fail.
+        config.model = _detect_model(sd)
+        m = get_model(config)
+        inc = m.load_state_dict(sd, strict=False)
+        bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys)
+               if all(t not in k for t in (".pe", "_div", "_teacher"))]
+        assert not bad, f"state_dict mismatch beyond positional encoding: {bad}"
+        return m.eval().to(dev)
+
+    model = _build(torch.load(args.checkpoint, map_location=dev, weights_only=False)["state_dict"])
     # optional PIP/PNP-style rigid-body physics refinement of the predicted pose (test-time only;
     # the metric below is unchanged — it scores the refined pose). Physics runs on a CPU body model.
     if os.environ.get("PHYS_REFINE"):
         from imuposer.physics import PhysicsRefineWrapper
         model = PhysicsRefineWrapper(model, ParametricModel(config.og_smpl_model_path, device="cpu"))
-    # SEED-ENSEMBLE: average the r6d pose of this checkpoint + ENSEMBLE_CKPTS (same architecture).
-    # Reduces the seed/CuDNN variance (the ~1.5deg noise floor). Eval-construction only; metric unchanged.
+    # ENSEMBLE: average the r6d pose of this checkpoint + ENSEMBLE_CKPTS. Members are auto-detected
+    # independently, so HETEROGENEOUS ensembles (LSTM + transformer+IK + ...) work. Eval-construction only.
     if os.environ.get("ENSEMBLE_CKPTS"):
         members = [model]
         for cp in os.environ["ENSEMBLE_CKPTS"].split(","):
-            m2 = get_model(config)
-            inc2 = m2.load_state_dict(torch.load(cp, map_location=dev, weights_only=False)["state_dict"], strict=False)
-            assert not [k for k in list(inc2.missing_keys) + list(inc2.unexpected_keys)
-                        if all(t not in k for t in (".pe", "_div", "_teacher"))], "ensemble ckpt mismatch"
-            members.append(m2.eval().to(dev))
+            members.append(_build(torch.load(cp, map_location=dev, weights_only=False)["state_dict"]))
 
         class _Ensemble(torch.nn.Module):
             def __init__(self, ms): super().__init__(); self.ms = ms
