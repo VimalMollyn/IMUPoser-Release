@@ -463,3 +463,8 @@ beats every single model and every same-model ensemble -- decorrelated errors ac
 Net improvement over the plain LSTM baseline: test SIP -0.6deg, Angle -1.4deg, Joint -0.5cm.
 Recipe: AMASS-only lw_rp_h, curated-12 datasets, calibration-error aug (AUG_CALIB_RAD=0.12), AvatarPoser
 IK loss for the transformer members, multi-seed + cross-architecture ensembling. (ENSEMBLE_CKPTS in eval_dip.)
+
+### Ensemble composition: only STRONG models help
+Adding the individually-weaker transformer (28.1) + CNN (27.7) to the LSTM+AvatarPoser ensemble HURT
+(val 26.38 vs 26.10) -- their errors are not decorrelated enough to offset being worse. Best ensemble =
+the two strong, complementary architectures (LSTM + AvatarPoser) only. (Bagged data-subset member tested next.)
