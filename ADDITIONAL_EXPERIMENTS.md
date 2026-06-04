@@ -468,3 +468,9 @@ IK loss for the transformer members, multi-seed + cross-architecture ensembling.
 Adding the individually-weaker transformer (28.1) + CNN (27.7) to the LSTM+AvatarPoser ensemble HURT
 (val 26.38 vs 26.10) -- their errors are not decorrelated enough to offset being worse. Best ensemble =
 the two strong, complementary architectures (LSTM + AvatarPoser) only. (Bagged data-subset member tested next.)
+
+### Bagging adds a touch more (final best)
+Bagged members (LSTM/AvatarPoser trained on different random 8/12 dataset subsets) are individually as
+good as full-data seeds (curated-12 is redundant) and add a little decorrelation: L3+A5+bagged-avatar ->
+test SIP 24.63 / Angle 20.85 (vs 24.67/20.92). FINAL BEST: ~24.6 test SIP / ~20.85 Angle / ~9.0cm Joint,
+vs plain-LSTM ~25.3/22.3/9.6 -> -0.7 SIP, -1.4 Angle, -0.6cm. Ensemble gains saturated here.
