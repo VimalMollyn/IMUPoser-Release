@@ -11,7 +11,11 @@ full log in `results.jsonl`, timeline in `progress.png`.
 | Calibration-error aug (`AUG_CALIB_RAD≈0.122`, 7°) | **−4.3° SIP** | Biggest win. Real IMUs are mis-mounted; perfect-FK synthetic lacks this. |
 | AvatarPoser IK loss (orientation-consistency) | **−1.2° Angle** | Anchors the ensemble's strong-Angle members. |
 | Diverse ensembling (LSTM + AvatarPoser) | **→ 24.6 SIP** | The deliverable. Saturates ~24.6–24.8; adding members/data stops helping. |
-| **SIP-weighted loss (`SIP_LOSS_W=4`)** ⭐ | **−0.8° single-model SIP** | New. Upweight the 4 SIP joints in the loss. 3-seed mean 25.41 vs clean 26.23; dose-response W2/4/8 = 25.98/25.10/25.50 (optimum W=4); it's the loss not selection (disjoint per-seed checkpoint ranges); no Angle cost. **Saturated ensemble unaffected.** |
+
+> **Correction — SIP-weighted loss (`SIP_LOSS_W=4`) is NULL.** It *looked* like a −1.1° win on 2 seeds,
+> but shrank with every added seed: −1.1 → −0.8 → −0.5 → **−0.26° at 4 seeds** (clean mean 25.97 vs sipw4
+> 25.71), distributions fully overlapping inside the ~1° noise floor. A phantom from lucky early seeds.
+> **Lesson: replicate ≥4 seeds before claiming any sub-noise-floor effect.** Left in as a cautionary record.
 
 ## What doesn't (all tested, not assumed)
 Architectures (Transformer/TIP, Diffusion/EgoEgo, 1D-CNN/TCN, codebook, deeper) · physics rigid-body
@@ -44,6 +48,9 @@ unstably. **Recommendation:** benchmark → keep the mean (sipw4); live avatar �
 post-hoc layer + a plausibility-aware eval. The real limitation is the *metric*, which is blind to plausibility.
 
 ## Bottom line
-Single-model lw_rp_h SIP: clean specialist 26.2 → **sipw4 25.4** (−0.8°, robust). Ensemble deliverable
-**~24.6**. Both tracks at their ceiling; further gains need a changed setup (more sensors, real-data
-fine-tuning, or a plausibility-aware objective/eval).
+Single-model lw_rp_h SIP ≈ **26.0** (clean specialist; sipw4 indistinguishable within noise). Ensemble
+deliverable **~24.6** — unchanged this session. The established levers (calib + IK + ensemble) all predate
+this session; nothing new beat the noise floor. Honest net contribution of this session: the **plausibility
+study** (a rigorous proof that plausibility ⊥ accuracy for scored un-sensed limbs, a reusable plausibility
+metric, and the NN-retrieval recommendation) — a real *negative* result. Further metric gains need a
+changed setup (more sensors, real-data fine-tuning, or a plausibility-aware objective/eval).
