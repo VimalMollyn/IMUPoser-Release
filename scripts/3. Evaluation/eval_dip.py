@@ -86,7 +86,7 @@ def main():
         m = get_model(config)
         inc = m.load_state_dict(sd, strict=False)
         bad = [k for k in list(inc.missing_keys) + list(inc.unexpected_keys)
-               if all(t not in k for t in (".pe", "_div", "_teacher"))]
+               if all(t not in k for t in (".pe", "_div", "_teacher", "discriminator", "_adv_dims"))]
         assert not bad, f"state_dict mismatch beyond positional encoding: {bad}"
         return m.eval().to(dev)
 
