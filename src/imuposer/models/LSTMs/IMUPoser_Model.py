@@ -12,6 +12,21 @@ from imuposer.smpl.parametricModel import ParametricModel
 from imuposer.math.angular import r6d_to_rotation_matrix
 from imuposer.config import Config
 
+
+class _GradReverse(torch.autograd.Function):
+    """Gradient-reversal: identity forward, negated (scaled) gradient backward. Lets a discriminator
+    train normally while the upstream pose model is pushed in the OPPOSITE (adversarial) direction,
+    so adversarial training fits in standard single-optimizer automatic optimization."""
+    @staticmethod
+    def forward(ctx, x, w):
+        ctx.w = w
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, g):
+        return -ctx.w * g, None
+
+
 class IMUPoserModel(pl.LightningModule):
     r"""
     Inputs - N IMUs, Outputs - SMPL Pose params (in Rot Matrix)
@@ -80,6 +95,18 @@ class IMUPoserModel(pl.LightningModule):
                              torch.tensor([d for j in (1, 2, 16, 17) for d in range(j * 6, j * 6 + 6)]),
                              persistent=False)
 
+        # Adversarial POSE PRIOR (ADV_W>0): a per-frame discriminator learns to tell real AMASS poses
+        # from predicted ones; via the gradient-reversal layer the pose model is pushed to make its
+        # output indistinguishable from real poses. The signal bites hardest where the L2 gradient is
+        # flat — the un-sensed limbs that otherwise collapse to the implausible conditional mean — so it
+        # restores plausibility there at low cost to the well-sensed joints. Default OFF.
+        self.adv_w = float(os.environ.get("ADV_W", "0"))
+        if self.adv_w:
+            self.discriminator = nn.Sequential(
+                nn.Linear(self.n_pose_output, 256), nn.LeakyReLU(0.2),
+                nn.Linear(256, 256), nn.LeakyReLU(0.2),
+                nn.Linear(256, 1))
+
         if config.loss_type == "mse":
             self.loss = nn.MSELoss()
         else:
@@ -141,6 +168,15 @@ class IMUPoserModel(pl.LightningModule):
             loss += joint_pos_loss
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
+        if self.adv_w and self.training:
+            # discriminator trains real(target)->1, fake(pred)->0; the gradient-reversal pushes the pose
+            # model to fool it -> predicted poses (esp. the unconstrained un-sensed limbs) move onto the
+            # real-pose manifold instead of collapsing to the mean. Guarded by self.training so the
+            # validation_step_loss (checkpoint-selection signal) stays the clean pose error.
+            real = self.discriminator(target_pose.reshape(-1, self.n_pose_output))
+            fake = self.discriminator(_GradReverse.apply(pred_pose.reshape(-1, self.n_pose_output), self.adv_w))
+            loss = loss + (nn.functional.binary_cross_entropy_with_logits(real, torch.ones_like(real)) +
+                           nn.functional.binary_cross_entropy_with_logits(fake, torch.zeros_like(fake)))
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
@@ -175,6 +211,15 @@ class IMUPoserModel(pl.LightningModule):
             loss += joint_pos_loss
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
+        if self.adv_w and self.training:
+            # discriminator trains real(target)->1, fake(pred)->0; the gradient-reversal pushes the pose
+            # model to fool it -> predicted poses (esp. the unconstrained un-sensed limbs) move onto the
+            # real-pose manifold instead of collapsing to the mean. Guarded by self.training so the
+            # validation_step_loss (checkpoint-selection signal) stays the clean pose error.
+            real = self.discriminator(target_pose.reshape(-1, self.n_pose_output))
+            fake = self.discriminator(_GradReverse.apply(pred_pose.reshape(-1, self.n_pose_output), self.adv_w))
+            loss = loss + (nn.functional.binary_cross_entropy_with_logits(real, torch.ones_like(real)) +
+                           nn.functional.binary_cross_entropy_with_logits(fake, torch.zeros_like(fake)))
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
