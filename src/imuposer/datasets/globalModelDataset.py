@@ -221,10 +221,12 @@ class GlobalModelDataset(Dataset):
 
         _pose = self.pose_windows[window_idx].float()
         if _Yyaw is not None:
-            # rotate ONLY the global root orientation (joint 0); joints 1-23 are parent-relative (local)
-            # and unchanged by a world rotation. Keeps the target consistent with the re-headed input.
-            _pose = _pose.clone()
-            _pose[:, 0] = torch.einsum('ij,wjk->wik', _Yyaw, _pose[:, 0])
+            # pose_windows are stored FLATTENED (W, 216); reshape to (W,24,3,3) to rotate ONLY the global
+            # root orientation (joint 0). Joints 1-23 are parent-relative (local) and unchanged by a world
+            # rotation. Keeps the target consistent with the re-headed input.
+            _p = _pose.view(-1, 24, 3, 3).clone()
+            _p[:, 0] = torch.einsum('ij,wjk->wik', _Yyaw, _p[:, 0])
+            _pose = _p.view(_pose.shape[0], -1)
         if self.config.r6d == True:
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
         else:
