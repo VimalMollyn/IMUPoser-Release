@@ -72,6 +72,14 @@ class IMUPoserModel(pl.LightningModule):
         self.acc_scale = config.acc_scale
         self.register_buffer("imu_joints", torch.tensor([18, 19, 1, 2, 15]), persistent=False)
 
+        # Optional SIP-weighted pose loss (SIP_LOSS_W>0): add an extra MSE term on the r6d of the
+        # 4 SIP joints ([1,2,16,17] = L/R hip, L/R shoulder) that dominate the reported SIP metric,
+        # so the optimizer spends more capacity where the headline error lives. Default OFF.
+        self.sip_w = float(os.environ.get("SIP_LOSS_W", "0"))
+        self.register_buffer("_sip_dims",
+                             torch.tensor([d for j in (1, 2, 16, 17) for d in range(j * 6, j * 6 + 6)]),
+                             persistent=False)
+
         if config.loss_type == "mse":
             self.loss = nn.MSELoss()
         else:
@@ -131,6 +139,8 @@ class IMUPoserModel(pl.LightningModule):
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
+        if self.sip_w:
+            loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
@@ -163,6 +173,8 @@ class IMUPoserModel(pl.LightningModule):
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
             joint_pos_loss = self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
+        if self.sip_w:
+            loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
         if self.ik_loss:
             loss = loss + self._ik_consistency(imu_inputs, pred_pose)
         if self.acc_loss:
