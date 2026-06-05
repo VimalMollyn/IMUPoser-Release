@@ -66,7 +66,7 @@ def main():
         if spec.strip() == "GT":
             panels.append(("GT", joints_from_pose(gtp)))
             continue
-        label, name = spec.split("=")
+        label, name = spec.rsplit("=", 1)
         m = get_model(cfg)
         m.load_state_dict(torch.load(bestval(name), map_location=dev, weights_only=False)["state_dict"], strict=False)
         m = m.eval().to(dev)
