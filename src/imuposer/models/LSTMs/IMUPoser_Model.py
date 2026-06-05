@@ -95,6 +95,18 @@ class IMUPoserModel(pl.LightningModule):
                              torch.tensor([d for j in (1, 2, 16, 17) for d in range(j * 6, j * 6 + 6)]),
                              persistent=False)
 
+        # UNSENSED_LOSS_W<1 down-weights (0 = ignores) the r6d pose loss on the un-sensed limbs (right arm
+        # + left leg), to test whether freeing the model from fitting the un-inferable limbs lets it spend
+        # capacity on the well-sensed joints. Builds a per-dim weight (default all-ones = unchanged).
+        self.unsensed_w = float(os.environ.get("UNSENSED_LOSS_W", "1"))
+        _pw = torch.ones(self.n_pose_output)
+        _jw = torch.ones(24)
+        for j in (1, 4, 7, 10, 14, 17, 19, 21, 23):                  # L leg + R arm joints
+            _pw[j * 6:j * 6 + 6] = self.unsensed_w
+            _jw[j] = self.unsensed_w
+        self.register_buffer("_pose_w", _pw, persistent=False)
+        self.register_buffer("_joint_w", _jw.view(1, 24, 1), persistent=False)
+
         # Adversarial POSE PRIOR (ADV_W>0): a per-frame discriminator learns to tell real AMASS poses
         # from predicted ones; via the gradient-reversal layer the pose model is pushed to make its
         # output indistinguishable from real poses. The signal bites hardest where the L2 gradient is
@@ -180,11 +192,13 @@ class IMUPoserModel(pl.LightningModule):
         pred_pose = _pred[:, :, :self.n_pose_output]
         _target = target_pose
         target_pose = _target[:, :, :self.n_pose_output]
-        loss = self.loss(pred_pose, target_pose)
+        loss = (((pred_pose - target_pose) ** 2) * self._pose_w).mean() if self.unsensed_w != 1 \
+            else self.loss(pred_pose, target_pose)
         if self.config.use_joint_loss:
             pred_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[1]
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
-            joint_pos_loss = self.loss(pred_joint, target_joint)
+            joint_pos_loss = (((pred_joint - target_joint) ** 2) * self._joint_w).mean() \
+                if self.unsensed_w != 1 else self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
@@ -223,11 +237,13 @@ class IMUPoserModel(pl.LightningModule):
         pred_pose = _pred[:, :, :self.n_pose_output]
         _target = target_pose
         target_pose = _target[:, :, :self.n_pose_output]
-        loss = self.loss(pred_pose, target_pose)
+        loss = (((pred_pose - target_pose) ** 2) * self._pose_w).mean() if self.unsensed_w != 1 \
+            else self.loss(pred_pose, target_pose)
         if self.config.use_joint_loss:
             pred_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[1]
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
-            joint_pos_loss = self.loss(pred_joint, target_joint)
+            joint_pos_loss = (((pred_joint - target_joint) ** 2) * self._joint_w).mean() \
+                if self.unsensed_w != 1 else self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
@@ -264,11 +280,13 @@ class IMUPoserModel(pl.LightningModule):
         pred_pose = _pred[:, :, :self.n_pose_output]
         _target = target_pose
         target_pose = _target[:, :, :self.n_pose_output]
-        loss = self.loss(pred_pose, target_pose)
+        loss = (((pred_pose - target_pose) ** 2) * self._pose_w).mean() if self.unsensed_w != 1 \
+            else self.loss(pred_pose, target_pose)
         if self.config.use_joint_loss:
             pred_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[1]
             target_joint = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[1] ## If training is slow, get this from the dataloader
-            joint_pos_loss = self.loss(pred_joint, target_joint)
+            joint_pos_loss = (((pred_joint - target_joint) ** 2) * self._joint_w).mean() \
+                if self.unsensed_w != 1 else self.loss(pred_joint, target_joint)
             loss += joint_pos_loss
 
         return {"loss": loss.item(), "pred": pred_pose, "true": target_pose}
