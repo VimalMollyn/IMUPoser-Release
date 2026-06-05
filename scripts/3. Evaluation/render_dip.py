@@ -24,6 +24,21 @@ REPO = Path(__file__).resolve().parents[2]
 DD = Path("/media/vimal/T7_2TB/CHI23/processed_imuposer_data/processed_imuposer_25fps")
 # un-sensed limb joints for lw_rp_h: right arm + left leg
 UNSENSED = {1, 4, 7, 10, 14, 17, 19, 21, 23}
+GRAFT = [1, 4, 7, 10, 14, 17, 19, 21, 23]                 # un-sensed limbs to replace via retrieval
+SENSF = [2, 5, 8, 16, 18, 20, 13, 15, 12, 3, 6, 9]        # sensed joints used as the retrieval key
+
+
+def _retrieve_db(bm_dd, dev):
+    """Subsampled AMASS pose DB for nearest-neighbour un-sensed-limb completion."""
+    DB = []
+    for ds in ["CMU", "KIT", "BMLmovi", "HumanEva", "SFU"]:
+        f = bm_dd / f"{ds}.pt"
+        if f.exists():
+            for p in torch.load(f, weights_only=False)["pose"]:
+                DB.append(p.view(-1, 24, 3, 3).float()[::8])
+    DB = torch.cat(DB).to(dev)
+    DBf = DB[:, SENSF].reshape(DB.shape[0], -1)
+    return DB, DBf / DBf.norm(dim=1, keepdim=True)
 
 
 def bestval(name):
@@ -67,6 +82,8 @@ def main():
             panels.append(("GT", joints_from_pose(gtp)))
             continue
         label, name = spec.rsplit("=", 1)
+        retr = name.endswith(":retrieve")                 # graft NN-retrieved plausible un-sensed limbs
+        name = name.replace(":retrieve", "")
         m = get_model(cfg)
         m.load_state_dict(torch.load(bestval(name), map_location=dev, weights_only=False)["state_dict"], strict=False)
         m = m.eval().to(dev)
@@ -76,6 +93,12 @@ def main():
         inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).to(dev)
         with torch.no_grad():
             pr = r6d_to_rotation_matrix(m(inp.unsqueeze(0), [n])[0, :, :144]).view(n, 24, 3, 3)
+        if retr:
+            DB, DBf = _retrieve_db(DD, dev)
+            qf = pr[:, SENSF].reshape(n, -1)
+            qf = qf / qf.norm(dim=1, keepdim=True)
+            nbr = torch.cat([(qf[s:s + 1000] @ DBf.T).argmax(1) for s in range(0, n, 1000)])
+            pr[:, GRAFT] = DB[nbr][:, GRAFT]
         panels.append((label, joints_from_pose(pr.cpu())))
         print(f"  rendered preds for {label}", flush=True)
 
