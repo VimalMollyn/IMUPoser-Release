@@ -102,8 +102,11 @@ class IMUPoserModel(pl.LightningModule):
         # restores plausibility there at low cost to the well-sensed joints. Default OFF.
         self.adv_w = float(os.environ.get("ADV_W", "0"))
         if self.adv_w:
+            # The discriminator sees pose AND per-frame velocity (finite diff). A per-frame-only D can't
+            # detect collapse — the mean pose is plausible frame-by-frame; what's unnatural is that the
+            # un-sensed limbs DON'T MOVE. Feeding velocity exposes the static-limb signature.
             self.discriminator = nn.Sequential(
-                nn.Linear(self.n_pose_output, 256), nn.LeakyReLU(0.2),
+                nn.Linear(2 * self.n_pose_output, 256), nn.LeakyReLU(0.2),
                 nn.Linear(256, 256), nn.LeakyReLU(0.2),
                 nn.Linear(256, 1))
 
@@ -121,6 +124,13 @@ class IMUPoserModel(pl.LightningModule):
         self.test_step_outputs = []
 
         self.save_hyperparameters(ignore=["config"])
+
+    def _disc_in(self, pose):
+        """(B,T,P) pose -> (B*T, 2P) discriminator input = [pose, per-frame velocity]. The velocity
+        channel is what lets the discriminator notice un-sensed limbs that are static (collapsed)."""
+        vel = torch.zeros_like(pose)
+        vel[:, 1:] = pose[:, 1:] - pose[:, :-1]
+        return torch.cat([pose, vel], dim=-1).reshape(-1, 2 * self.n_pose_output)
 
     def forward(self, imu_inputs, imu_lens):
         pred_pose, _, _ = self.dip_model(imu_inputs, imu_lens)
@@ -173,8 +183,8 @@ class IMUPoserModel(pl.LightningModule):
             # model to fool it -> predicted poses (esp. the unconstrained un-sensed limbs) move onto the
             # real-pose manifold instead of collapsing to the mean. Guarded by self.training so the
             # validation_step_loss (checkpoint-selection signal) stays the clean pose error.
-            real = self.discriminator(target_pose.reshape(-1, self.n_pose_output))
-            fake = self.discriminator(_GradReverse.apply(pred_pose.reshape(-1, self.n_pose_output), self.adv_w))
+            real = self.discriminator(self._disc_in(target_pose))
+            fake = self.discriminator(self._disc_in(_GradReverse.apply(pred_pose, self.adv_w)))
             loss = loss + (nn.functional.binary_cross_entropy_with_logits(real, torch.ones_like(real)) +
                            nn.functional.binary_cross_entropy_with_logits(fake, torch.zeros_like(fake)))
         if self.ik_loss:
@@ -216,8 +226,8 @@ class IMUPoserModel(pl.LightningModule):
             # model to fool it -> predicted poses (esp. the unconstrained un-sensed limbs) move onto the
             # real-pose manifold instead of collapsing to the mean. Guarded by self.training so the
             # validation_step_loss (checkpoint-selection signal) stays the clean pose error.
-            real = self.discriminator(target_pose.reshape(-1, self.n_pose_output))
-            fake = self.discriminator(_GradReverse.apply(pred_pose.reshape(-1, self.n_pose_output), self.adv_w))
+            real = self.discriminator(self._disc_in(target_pose))
+            fake = self.discriminator(self._disc_in(_GradReverse.apply(pred_pose, self.adv_w)))
             loss = loss + (nn.functional.binary_cross_entropy_with_logits(real, torch.ones_like(real)) +
                            nn.functional.binary_cross_entropy_with_logits(fake, torch.zeros_like(fake)))
         if self.ik_loss:
