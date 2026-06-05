@@ -105,8 +105,17 @@ class IMUPoserModel(pl.LightningModule):
             # The discriminator sees pose AND per-frame velocity (finite diff). A per-frame-only D can't
             # detect collapse — the mean pose is plausible frame-by-frame; what's unnatural is that the
             # un-sensed limbs DON'T MOVE. Feeding velocity exposes the static-limb signature.
+            # ADV_UNSENSED=1 restricts the discriminator to the UN-SENSED limbs (right arm + left leg)
+            # only, so the adversarial gradient never perturbs the well-sensed joints — plausibility is
+            # restored where it's missing at no accuracy cost to where the IMUs actually constrain.
+            if os.environ.get("ADV_UNSENSED"):
+                _aj = [1, 4, 7, 10, 14, 17, 19, 21, 23]                 # L leg + R arm joints
+                adv_dims = [d for j in _aj for d in range(j * 6, j * 6 + 6)]
+            else:
+                adv_dims = list(range(self.n_pose_output))
+            self.register_buffer("_adv_dims", torch.tensor(adv_dims), persistent=False)
             self.discriminator = nn.Sequential(
-                nn.Linear(2 * self.n_pose_output, 256), nn.LeakyReLU(0.2),
+                nn.Linear(2 * len(adv_dims), 256), nn.LeakyReLU(0.2),
                 nn.Linear(256, 256), nn.LeakyReLU(0.2),
                 nn.Linear(256, 1))
 
@@ -126,11 +135,12 @@ class IMUPoserModel(pl.LightningModule):
         self.save_hyperparameters(ignore=["config"])
 
     def _disc_in(self, pose):
-        """(B,T,P) pose -> (B*T, 2P) discriminator input = [pose, per-frame velocity]. The velocity
-        channel is what lets the discriminator notice un-sensed limbs that are static (collapsed)."""
+        """(B,T,P) pose -> (B*T, 2D) discriminator input = [pose, per-frame velocity] restricted to the
+        _adv_dims (all joints, or only the un-sensed limbs). Velocity exposes static (collapsed) limbs."""
         vel = torch.zeros_like(pose)
         vel[:, 1:] = pose[:, 1:] - pose[:, :-1]
-        return torch.cat([pose, vel], dim=-1).reshape(-1, 2 * self.n_pose_output)
+        x = torch.cat([pose[..., self._adv_dims], vel[..., self._adv_dims]], dim=-1)
+        return x.reshape(-1, x.shape[-1])
 
     def forward(self, imu_inputs, imu_lens):
         pred_pose, _, _ = self.dip_model(imu_inputs, imu_lens)
