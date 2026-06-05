@@ -48,6 +48,12 @@ class AvatarPoserModel(pl.LightningModule):
         self.ik_w = float(os.environ.get("AP_IK_W", "1.0"))
         self.lr = float(os.environ.get("TF_LR", "3e-4"))
         self.register_buffer("imu_joints", torch.tensor(_IMU_JOINTS), persistent=False)
+        # SIP-weighted pose loss (SIP_LOSS_W>0): upweight the r6d of the 4 SIP joints [1,2,16,17].
+        # Same knob as the LSTM; the −1.1° SIP win there transfers if the transformer responds too.
+        self.sip_w = float(os.environ.get("SIP_LOSS_W", "0"))
+        self.register_buffer("_sip_dims",
+                             torch.tensor([d for j in (1, 2, 16, 17) for d in range(j * 6, j * 6 + 6)]),
+                             persistent=False)
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -74,6 +80,8 @@ class AvatarPoserModel(pl.LightningModule):
         pred_pose = self(imu, lens)[:, :, :self.n_pose_output]
         target_pose = target[:, :, :self.n_pose_output]
         loss = self.loss(pred_pose, target_pose)
+        if self.sip_w:
+            loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
         # FK once: global rotations (grot) AND joint positions
         grot, jpos = self.bodymodel.forward_kinematics(
             pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[:2]
