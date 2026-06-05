@@ -24,9 +24,14 @@ import torch
 from imuposer.config import Config, amass_combos
 from imuposer.models.utils import get_model
 from imuposer.smpl.parametricModel import ParametricModel
-from imuposer.math.angular import r6d_to_rotation_matrix, angle_between, radian_to_degree
+from imuposer.math.angular import r6d_to_rotation_matrix, angle_between, radian_to_degree, axis_angle_to_rotation_matrix
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Test-time calibration augmentation (off by default). TTA_N copies of each input with a random
+# per-sensor mounting-rotation offset are averaged -> marginalizes the unknown DIP calibration.
+TTA_N = int(os.environ.get("TTA_N", "0"))
+TTA_RAD = float(os.environ.get("TTA_RAD", "0.12217"))
 
 # joints excluded from the metrics (set to identity in pred & target); incl. root -> root-relative
 IGNORED = torch.tensor([0, 7, 8, 10, 11, 20, 21, 22, 23])
@@ -144,8 +149,24 @@ def main():
                 co = torch.zeros_like(ori)
                 ca[:, idx] = acc[:, idx] / config.acc_scale
                 co[:, idx] = ori[:, idx]
-                inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).to(dev)
-                pred = model(inp.unsqueeze(0), [n])[0, :, :144]
+                # Optional test-time calibration augmentation (TTA_N>0): the real sensor mounting
+                # calibration is unknown, so marginalize over it — run the model on TTA_N copies of the
+                # input, each with the present sensors' orientation rotated by a random calib offset
+                # (same axis-angle(randn*rad) form as the training aug), and average the r6d. Eval-only;
+                # the metric below is unchanged. TTA_N=0 -> exact original single forward.
+                if TTA_N > 0:
+                    preds = []
+                    for _ in range(TTA_N):
+                        co_t = co.clone()
+                        for c in idx:
+                            Rc = axis_angle_to_rotation_matrix((torch.randn(3) * TTA_RAD).unsqueeze(0))[0]
+                            co_t[:, c] = torch.matmul(Rc, co_t[:, c])
+                        inp = torch.cat([ca.reshape(n, -1), co_t.reshape(n, -1)], 1).to(dev)
+                        preds.append(model(inp.unsqueeze(0), [n])[0, :, :144])
+                    pred = sum(preds) / len(preds)
+                else:
+                    inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).to(dev)
+                    pred = model(inp.unsqueeze(0), [n])[0, :, :144]
                 je, ve, lae, gae, sip = metrics(r6d_to_rotation_matrix(pred).view(n, 24, 3, 3), gt.to(dev))
                 ja += je * n; va += ve * n; la += lae * n; ga += gae * n; sa += sip * n; nf += n
             ja, va, la, ga, sa = [x / nf for x in (ja, va, la, ga, sa)]
