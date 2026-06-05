@@ -69,6 +69,12 @@ class GlobalModelDataset(Dataset):
         self.aug_gyro_rw = float(os.environ.get("AUG_GYRO_RW", "0"))
         self.aug_gyro_n = float(os.environ.get("AUG_GYRO_N", "0"))
         self.aug_gyro_yawonly = bool(os.environ.get("AUG_GYRO_YAWONLY"))  # ESKF tilt-correction: drift yaw only
+        # random global HEADING (world-yaw) augmentation: AMASS sequences are often heading-canonicalized,
+        # so the model can overfit to a narrow heading distribution while real DIP has arbitrary headings.
+        # Rotate the whole window (global sensor acc+ori AND the global root orientation) by a random yaw
+        # about world-up (Y). The body motion is identical, only re-headed -> forces heading invariance.
+        # The metric is root-relative so this never changes the target's score, only the input distribution.
+        self.aug_yaw = bool(os.environ.get("AUG_YAW"))
         self.data = self.load_data()
 
     def load_data(self):
@@ -149,6 +155,16 @@ class GlobalModelDataset(Dataset):
         acc = self.acc_windows[window_idx]      # W, 5, 3
         ori = self.ori_windows[window_idx]      # W, 5, 3, 3
 
+        # random global heading: rotate every sensor's global acc+ori (and, below, the root) by one
+        # random world-yaw about up (Y). Computed once per window so the body stays rigid, only re-headed.
+        _Yyaw = None
+        if self.augment and self.aug_yaw:
+            _th = (torch.rand(()) * 2.0 - 1.0) * torch.pi
+            _c, _s = torch.cos(_th), torch.sin(_th)
+            _Yyaw = torch.tensor([[_c, 0.0, _s], [0.0, 1.0, 0.0], [-_s, 0.0, _c]])
+            acc = torch.einsum('ij,wsj->wsi', _Yyaw, acc)
+            ori = torch.einsum('ij,wsjk->wsik', _Yyaw, ori)
+
         # zero out the IMUs not present in this combo
         _combo_acc = torch.zeros_like(acc)
         _combo_ori = torch.zeros_like(ori)
@@ -204,6 +220,11 @@ class GlobalModelDataset(Dataset):
         _input = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1).float()
 
         _pose = self.pose_windows[window_idx].float()
+        if _Yyaw is not None:
+            # rotate ONLY the global root orientation (joint 0); joints 1-23 are parent-relative (local)
+            # and unchanged by a world rotation. Keeps the target consistent with the re-headed input.
+            _pose = _pose.clone()
+            _pose[:, 0] = torch.einsum('ij,wjk->wik', _Yyaw, _pose[:, 0])
         if self.config.r6d == True:
             _output = math.rotation_matrix_to_r6d(_pose).reshape(-1, 24, 6)[:, self.config.pred_joints_set].reshape(-1, 6 * len(self.config.pred_joints_set))
         else:
