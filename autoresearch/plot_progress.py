@@ -30,7 +30,9 @@ def load():
         line = line.strip()
         if line:
             rows.append(json.loads(line))
-    rows.sort(key=lambda r: r["exp"])
+    # exp ids are mostly ints but some are descriptive strings (ensembles, ablations); sort by
+    # timestamp when present so the timeline is chronological regardless of id type.
+    rows.sort(key=lambda r: (r.get("ts") or "", str(r["exp"])))
     return rows
 
 
@@ -43,7 +45,8 @@ def main():
     # headline metric = SIP (deg) on the DIP-train val split (fall back to val_loss)
     rows = [r for r in rows if ("sip" in r) or ("val" in r) or ("val_loss" in r)]
     def metric(r): return r.get("sip", r.get("val_loss", r.get("val")))
-    x = [r["exp"] for r in rows]
+    x = list(range(len(rows)))            # chronological index (exp ids are mixed int/str)
+    expids = [r["exp"] for r in rows]
     y = [metric(r) for r in rows]
     kept = [r.get("kept", False) for r in rows]
     names = [r.get("name", "") for r in rows]
@@ -74,9 +77,9 @@ def main():
 
     # label each experiment with its name (exp#: name), alternating above/below to reduce overlap
     yr = (max(y) - min(y)) or 1.0
-    for i, (xi, yi, nm) in enumerate(zip(x, y, names)):
+    for i, (xi, yi, nm, eid) in enumerate(zip(x, y, names, expids)):
         dy = 0.04 * yr if i % 2 == 0 else -0.06 * yr
-        ax.annotate(f"{xi}:{nm}", (xi, yi), xytext=(xi, yi + dy), fontsize=7,
+        ax.annotate(f"{eid}:{nm}", (xi, yi), xytext=(xi, yi + dy), fontsize=7,
                     ha="center", color="0.25", rotation=20)
 
     b0, bN = best[0], best[-1]
