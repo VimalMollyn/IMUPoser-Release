@@ -47,6 +47,22 @@ velocity-aware D, `ADV_UNSENSED` to target un-sensed limbs); it restores varianc
 unstably. **Recommendation:** benchmark → keep the mean (sipw4); live avatar → NN-retrieval as a cheap
 post-hoc layer + a plausibility-aware eval. The real limitation is the *metric*, which is blind to plausibility.
 
+## DIP fine-tuning — the real unlock (protocol change, user-directed)
+After exhausting AMASS-only levers (ceiling ~24.6 ensemble), fine-tuning on **real DIP** crossed the
+sim-to-real gap that capped everything. Done safely: split `dip_train` (41 seqs) → `ftrain` (32) +
+`fval` (9) by sequence; warm-start an AMASS model (`CONTINUE_FROM`), train on `ftrain`, select on `fval`,
+**`dip_test` (s09/s10) fully held out**. Fine-tuning is tiny (~1 min/model).
+
+| stage | SIP | Angle |
+|---|---|---|
+| AMASS-only single | 26.09 | 22.28 |
+| AMASS-only ensemble (old best) | 24.63 | 20.85 |
+| FT single (LSTM / AvatarPoser) | 19.85 / 19.09 | 18.98 / 18.0 |
+| **FT ensemble (curated 4 avatar + 2 LSTM)** | **18.59** | **17.58** |
+
+**−6.0° SIP off the old deliverable.** AvatarPoser fine-tunes best; calib aug during FT helps slightly;
+ensemble saturates ~18.5. This single lever dwarfs every AMASS-only finding combined.
+
 ## Bottom line
 Single-model lw_rp_h SIP ≈ **26.0** (clean specialist; sipw4 indistinguishable within noise). Ensemble
 deliverable **~24.6** — unchanged this session. The established levers (calib + IK + ensemble) all predate
