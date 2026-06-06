@@ -43,8 +43,8 @@ def main():
         return
 
     # headline metric = SIP (deg) on the DIP-train val split (fall back to val_loss)
-    rows = [r for r in rows if ("sip" in r) or ("val" in r) or ("val_loss" in r)]
-    def metric(r): return r.get("sip", r.get("val_loss", r.get("val")))
+    def metric(r): return r.get("sip") or r.get("val_loss") or r.get("val")
+    rows = [r for r in rows if metric(r) is not None]
     x = list(range(len(rows)))            # chronological index (exp ids are mixed int/str)
     expids = [r["exp"] for r in rows]
     y = [metric(r) for r in rows]
