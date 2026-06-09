@@ -107,6 +107,26 @@ Consistent −0.2–0.5 across every metric from +9 real seqs → the FT regime 
 (suggests more real IMU, e.g. TotalCapture, as the next lever). New deliverable arc: 24.6 AMASS-ens →
 18.59 FT-ens → **18.37 full-dip_train FT-ens**.
 
+## SIP-paper optimization + longer sequences (user-directed follow-up)
+**SIP-style energy minimisation** (`scripts/3. Evaluation/sip_fit.py`, von Marcard 2017): whole-sequence
+fit, variables = pose r6d + root translation, energy = orientation + **acceleration** (robust Huber on the
+2nd-diff of the sensor VERTEX world position via verified-exact reduced-vertex FK) + smoothness + network
+prior. On the held-out old ensemble (fval): ori-only (w_acc=0) **SIP +0.08 NEUTRAL** (matches offline_fit);
+adding the accel term **HURTS** — w_acc 0.02 → +0.36, 0.05 → +0.41 SIP, and jitter explodes 47→331.
+*Why, conclusively:* the real DIP accelerometer is **noise-dominated vs rigid-body synthetic accel even at
+60 fps** — real-vs-synth residual/signal ratio = thigh 1.72, head 1.81 (the low-motion sensors that would
+constrain the pelvis). Fitting it pulls the pose toward the accel noise, away from GT. This is exactly why
+DIP (the neural net) beat SIP historically: the net learns to denoise the accel; SIP's hard accel-fit can't.
+
+**Longer sequences:** FT avatar on `ftrain`, fval single-model SIP vs the 125-frame window (17.36):
+300-frame **17.95**, 600-frame **18.83** — both worse (longer windows = fewer effective training windows →
+more overfitting). The offline fit already optimises whole sequences. Neither lever helps.
+
+**Combined verdict on offline optimization (the whole user thread):** orientation-fitting is neutral (the
+network already extracts the measured orientations); the acceleration term — the one thing SIP adds — is
+counterproductive on real noisy DIP accel; longer context overfits. The FT ensemble is a near-optimal
+estimator and **18.37 SIP is the sensor-coverage floor for lw_rp_h**; offline methods confirm it.
+
 ## Bottom line
 Single-model lw_rp_h SIP ≈ **26.0** (clean specialist; sipw4 indistinguishable within noise). Ensemble
 deliverable **~24.6** — unchanged this session. The established levers (calib + IK + ensemble) all predate
