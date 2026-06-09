@@ -63,6 +63,50 @@ sim-to-real gap that capped everything. Done safely: split `dip_train` (41 seqs)
 **−6.0° SIP off the old deliverable.** AvatarPoser fine-tunes best; calib aug during FT helps slightly;
 ensemble saturates ~18.5. This single lever dwarfs every AMASS-only finding combined.
 
+## Offline optimization — analysis-by-synthesis (user-directed: "no realtime constraint, best fit ever")
+Built `scripts/3. Evaluation/offline_fit.py`: per-sequence offline fit that initialises from the FT
+ensemble and uses ONLY the IMU (never GT) — fits the FK global orientations of the sensed bones
+(lw→joint 18, rp→joint 2, h→joint 15) to the measured DIP orientations, with temporal smoothness, a
+network-prior anchor, optional per-sensor calibration, plus a parameter-free **measurement injection**
+(overwrite a sensed bone's global ori with its measurement via IK) and a **Wahba re-root** (re-estimate
+the pelvis from the sensed measurements). Acceleration term dropped: 25 fps finite-difference accel is
+aliasing-dominated and all metrics are root-relative (translation unscored).
+
+**Result — offline post-hoc optimization does NOT beat the trained ensemble (SIP neutral).** Tuned on
+held-out `fval`, confirmed on `dip_test`: every variant lands at ΔSIP ≈ 0 (injection +0.05, reroot +0.03,
+iterative +0.12), with only a tiny ΔMPJRE ≈ −0.15 (the directly-sensed joints get nudged).
+
+Why (the diagnosis that matters): the network's error on the **directly measured** joints is already
+*worse than the raw measurement* (joint 18 net 12° vs meas 1.2°; joint 15 net 11° vs 0.9°; joint 2 net
+10.5° vs 5.1°) — the feed-forward net degrades signals it gets as input — **but you cannot exploit this**
+because (a) the metric is root-relative and zeros the pelvis, while measurements are world-frame, so
+injecting a world ori onto the network's pelvis just re-expresses the network's ~11° pelvis error; (b) the
+pelvis is **un-sensed** (sensors on left-forearm / right-thigh / head) and can't be recovered better than
+the network — a Wahba estimate from the net's own relative pose is circular. An **oracle** with the *true*
+pelvis only reaches SIP 15.36 on fval (−1.2), and even then the un-sensed shoulders get *worse* (the net's
+pose is internally consistent with its own pelvis). The dominant error is the irreducible un-sensed right
+arm (relb/rsho 33/26°) + left hip — no measurement, conditional-mean-optimal. **18.x SIP is the floor for
+lw_rp_h; offline fitting confirms it rather than beating it.** The offline fitter is kept as a tool and a
+rigorous negative result.
+
+## Data lever — full dip_train fine-tune (NEW BEST 18.37)
+The steepest lever is still *real-data realism*. The FT ensemble trained on `ftrain` (32 seqs) and selected
+on `fval` (9) — but `fval` was only a research-phase selection signal; the standard DIP split trains on all
+of s01–s08. Continue-fine-tuned each of the 6 members on the **full dip_train** (41 seqs) at low LR
+(5e-5, 30 ep); `dip_test` (s09/s10) stays fully held out. Single test readout (last.ckpt, apples-to-apples):
+
+| metric | old (ftrain) | **new (full dip_train)** |
+|---|---|---|
+| SIP   | 18.60 | **18.37** |
+| MPJRE | 17.56 | 17.36 |
+| MPJPE | 8.13  | 8.03 |
+| MPVPE | 9.56  | 9.49 |
+| MPJVE | 29.33 | 28.84 |
+
+Consistent −0.2–0.5 across every metric from +9 real seqs → the FT regime is still real-data-limited
+(suggests more real IMU, e.g. TotalCapture, as the next lever). New deliverable arc: 24.6 AMASS-ens →
+18.59 FT-ens → **18.37 full-dip_train FT-ens**.
+
 ## Bottom line
 Single-model lw_rp_h SIP ≈ **26.0** (clean specialist; sipw4 indistinguishable within noise). Ensemble
 deliverable **~24.6** — unchanged this session. The established levers (calib + IK + ensemble) all predate
