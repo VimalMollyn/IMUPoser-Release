@@ -127,6 +127,22 @@ network already extracts the measured orientations); the acceleration term — t
 counterproductive on real noisy DIP accel; longer context overfits. The FT ensemble is a near-optimal
 estimator and **18.37 SIP is the sensor-coverage floor for lw_rp_h**; offline methods confirm it.
 
+## WHIP dataset integration (real IMU at our exact config — in progress, overnight)
+WHIP (ECCV 2026, Boscolo Camiletto et al., MPI) = real wearable dataset: **14 actors, 28 seq, 1343 clips,
+801k frames @ 30fps (~7.4h ≈ 5× DIP)**, 55 diverse actions. IMUs = `watch_left/right`, `phone_left/right`
+(+ VR head) → **exactly our lw/rw/lp/rp/h slots as REAL hardware**. Accel is g-units gravity-removed
+(×9.81 = our convention; verified world-accel=ori·accel·9.81 matches joint 2nd-diff → also fixes fps=30).
+GT is a 69-joint mocap skeleton (not SMPL) + insoles + VR pose. Download: Edmond DOI 10.17617/3.ZGVC7M
+(1.21GB, CC-BY-NC).
+
+Integration (all 3 risks cleared): (1) **retarget** mocap→SMPL by fitting shape+pose to joint positions —
+1.4cm. (2) joint positions leave bone **twist** unconstrained → sensed-bone ori wouldn't match the IMU
+(30–100° residual!); fixed by **jointly fitting pose+shape+per-sensor two-sided calibration to positions
+AND IMU orientations** (the IMU supplies twist) → residual drops to **lw 2–3°, rp 3–5°, head 0.2–0.6°,
+DIP-comparable**. (3) accel → SMPL-global via `Rti·ori·accel·9.81`. Scripts: `whip_retarget.py`
+(per-clip → 25fps pose/ori/acc), `whip_package.py` (→ whip.pt train / whip_test.pt = actor00 + test_*
+actions held out), `run_whip_ft.sh`. Next: fine-tune on DIP+WHIP, eval dip_test (does it beat 18.37?).
+
 ## Bottom line
 Single-model lw_rp_h SIP ≈ **26.0** (clean specialist; sipw4 indistinguishable within noise). Ensemble
 deliverable **~24.6** — unchanged this session. The established levers (calib + IK + ensemble) all predate
