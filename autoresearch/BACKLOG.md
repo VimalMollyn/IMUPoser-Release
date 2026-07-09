@@ -1,5 +1,16 @@
 # AutoResearch backlog — ALL-DAY continuous run (2026-06-03), keep BOTH GPUs busy, never idle
 
+## WHIP thread (2026-07-09) — QUEUED (user: "do this later")
+- [~] IN PROGRESS: retarget WHIP real IMU -> SMPL, fine-tune lw_rp_h on DIP+WHIP, eval dip_test (beat 18.37?).
+- [ ] **Joint-position IMUPoser (user idea).** Retrain IMUPoser to predict 3D JOINT POSITIONS directly
+      (like WHIP; MPJPE loss/metric) instead of SMPL rotations. Then compare: does adding WHIP data help in
+      that rotation-free formulation? Key advantage — **no mocap->SMPL retargeting needed for WHIP's GT**
+      (WHIP joints_3D are native), so it removes the retargeting error and gives an apples-to-apples
+      comparison on WHIP's own benchmark. Needs: joint-position head + loss on IMUPoser, a joints target in
+      the dataset (we already have joint FK), and a shared joint set between DIP-SMPL-joints and WHIP-69-joints.
+      Compare DIP-only vs DIP+WHIP on both dip_test-joints and whip_test MPJPE.
+
+
 Best recipe env: `TRAIN_COMBO=lw_rp_h AUG_CALIB_RAD=0.12217 VAL_FILES=dip_train.pt` + curated-12
 `TRAIN_DATASETS=CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits`.
 Baselines: plain LSTM val SIP 26.79(s1)/26.93(s2); noise floor ~1.5° → seed-replicate wins.
