@@ -5,7 +5,7 @@
 set -u
 cd "$(dirname "$0")"
 REPO="$PWD/../.."
-BASE="$REPO/checkpoints/autoresearch/exp21_avatar_s1/epoch=epoch=37-val_loss=validation_step_loss=0.03638.ckpt"
+BASE="${BASE_CKPT:-$REPO/checkpoints/autoresearch/exp21_avatar_s1/epoch=epoch=37-val_loss=validation_step_loss=0.03638.ckpt}"
 OUT="$REPO/checkpoints/whipft"
 mkdir -p "$OUT"
 
