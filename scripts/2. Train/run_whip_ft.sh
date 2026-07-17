@@ -6,7 +6,7 @@ set -u
 cd "$(dirname "$0")"
 REPO="$PWD/../.."
 BASE="${BASE_CKPT:-$REPO/checkpoints/autoresearch/exp21_avatar_s1/epoch=epoch=37-val_loss=validation_step_loss=0.03638.ckpt}"
-OUT="$REPO/checkpoints/whipft"
+OUT="${OUT_DIR:-$REPO/checkpoints/whipft}"
 mkdir -p "$OUT"
 
 GPU="${1:?gpu}"; shift
