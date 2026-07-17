@@ -150,3 +150,52 @@ this session; nothing new beat the noise floor. Honest net contribution of this 
 study** (a rigorous proof that plausibility ⊥ accuracy for scored un-sensed limbs, a reusable plausibility
 metric, and the NN-retrieval recommendation) — a real *negative* result. Further metric gains need a
 changed setup (more sensors, real-data fine-tuning, or a plausibility-aware objective/eval).
+
+
+## Nymeria (NymeriaPlus) integration — 2026-07-17
+
+**Why, after WHIP failed.** WHIP lost on DISTRIBUTION, not quality (own-mean pose diversity 50.5 deg
+vs DIP's 32.5; distance from DIP 60.6 deg). NymeriaPlus is 1100 x 15 min = ~275 h of *everyday
+motion in the wild* (cooking, cleaning, working) — the same activity class DIP samples.
+
+**Acquisition (cheap).** `body_processed` is a 320 MB zip of [xdata_mhr.glb 260 MB (unused),
+xdata_smpl_neutral.npz 60 MB (wanted)]. fbcdn serves HTTP 206, so `nymeria_fetch.py` reads each
+zip's central directory remotely and streams ONLY the npz member: 19% of the bytes, and the raw is
+never stored (parsed in memory, only synthesized tensors kept). 400 seqs -> 80.9 h in ~14 min
+(4 shards), 19.4 GB down, 10 GB at 25fps.
+
+**No retargeting.** xdata_smpl_neutral.npz is native SMPL: global_orient (T,3) + body_pose (T,69) =
+our 24-joint axis-angle layout, in AMASS's z-up frame. VERIFIED empirically: head sits +1.573 m above
+the feet on z, and the standard `amass_rot` maps it to DIP's y-up (+1.573 on y). Contrast WHIP, where
+fitting SMPL to 69-joint mocap was the dominant risk.
+
+**QC — the data is clean:**
+| dataset | own-mean diversity | distance from DIP | GT jerk | accel mean/p95 | tran range |
+|---|---|---|---|---|---|
+| dip_train | 32.5 | 32.5 | 93.0 | 1.94 / 7.52 (REAL) | 0.0 (DIP has no tran) |
+| dip_test | 30.9 | 32.7 | 108.6 | 2.88 / 11.65 (REAL) | 0.0 |
+| whip | 50.5 | **60.6** | — | 1.28 / 4.14 | — |
+| CMU | — | — | — | 3.81 / 10.76 | 6.8 m |
+| BioMotionLab_NTroje | — | — | — | 3.53 / 9.28 | 5.1 m |
+| **Nymeria** | **28.5–29.7** | **42.2–42.6** | 79.5 | 3.67 / 5.45 | 26.8 m |
+
+Nymeria's diversity ~matches DIP's and it is 18 deg closer to DIP than WHIP. Accel sits between CMU
+and BML (in-family with what we already train on); the lower p95 is *fewer explosive events*, which
+is what "everyday motion" should look like, not noise — GT jerk 79.5 < DIP's 93 confirms it is
+smoother, not jitterier.
+
+NOTE the diversity metric MUST be root-relative (R_root^T @ R_joint). Raw global rotations measure
+heading spread — Nymeria subjects walk freely (26.8 m range) while DIP is a fixed lab capture, which
+made Nymeria look falsely 2x worse than WHIP (109.9 deg) until corrected. Same heading-invariance
+trap as the WHIP 59-deg zero-shot scare.
+
+**Design — Nymeria goes in PRETRAIN, not FT.** WHIP was injected at the FT stage, whose job is
+adapting to real IMU noise; synthetic data there dilutes it. Nymeria is synthetic-IMU motion like
+AMASS — its value is distribution.
+| stage | control | treatment |
+|---|---|---|
+| 1. pretrain | curated-12 AMASS | curated-12 + Nymeria (80.9 h) |
+| 2. finetune | ftrain (real DIP) | ftrain (real DIP) |
+| eval | dip_test | dip_test |
+Both bases trained here rather than reusing exp21 as control: exp21's TRAIN_DATASETS is not recorded
+in wandb, so reusing it would confound "Nymeria added" with "data changed". dip_test held out.
