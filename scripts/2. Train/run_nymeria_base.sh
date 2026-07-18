@@ -23,6 +23,9 @@ CURATED="CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU
 NYM="$(ls "$DD" | grep -E '^Nymeria_.*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
 if [ -z "$NYM" ]; then echo "no Nymeria_*.pt in $DD" >&2; exit 1; fi
 echo "Nymeria chunks: $(echo "$NYM" | tr ',' '\n' | wc -l)"
+# nym80 = the original 80.9h dose = the FIRST 34 chunks (shards 00_00x/01_00x/02_00x/03_00x from round 1),
+# i.e. those with a two-digit shard <04. Deterministic subset so the 80.9h dose is reproducible.
+NYM80="$(echo "$NYM" | tr ',' '\n' | grep -E '^Nymeria_0[0-3]_00[0-9]$' | paste -sd, -)"
 
 GPU="${1:?gpu}"; shift
 for spec in "$@"; do
@@ -30,6 +33,7 @@ for spec in "$@"; do
   case "$arm" in
     curated)  DATA="$CURATED" ;;
     nymeria)  DATA="$CURATED,$NYM" ;;
+    nym80)    DATA="$CURATED,$NYM80" ;;
     nymonly)  DATA="$NYM" ;;
     *) echo "unknown arm $arm" >&2; exit 1 ;;
   esac
