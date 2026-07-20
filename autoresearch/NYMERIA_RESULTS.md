@@ -108,11 +108,37 @@ the prior best **ensemble** (18.37 — curated 4 avatar + 2 LSTM); Nymeria's GT 
 mocap with its own drift), not optical. The natural next step is to ensemble the Nymeria seeds and/or
 fold Nymeria pretraining into the full ensemble recipe to try to push past 18.37.
 
+## 6b. Ensemble distillation — can 18.27 fit in ONE model? NO.
+
+The 18.27 needs 3 transformers at inference (defeats real-time). Tried to compress it into a single
+model. **It does not distill** — the ensemble gain is inference-time output-variance reduction
+(member disagreement on unseen inputs), which a single forward pass cannot reproduce on held-out data.
+
+| approach | dip_test SIP | |
+|---|---|---|
+| 3-model ensemble (target) | **18.27** | needs 3x inference |
+| weight-average ("model soup") | 35.84 | BROKEN — seeds in different basins (rel weight dist ~1.5) |
+| distill: blend (ensemble + GT) | 18.81 | = single-model |
+| distill: pure imitation | 18.83 | = single-model |
+| distill: heavy aug (0.2) | 19.05 | worse (over-perturbed inputs) |
+| *single Nymeria model (ref)* | *18.75* | deployable at 1x |
+
+**Deployment-cost curve (ensemble gain saturates fast):**
+| inference cost | dip_test SIP |
+|---|---|
+| 1 model (real-time) | 18.75 |
+| 2 models | 18.37–18.44 |
+| 3 models | 18.27 |
+
+Bottom line: the **Nymeria pretraining gain (19.09 → 18.75) survives fully in one model at 1x cost**
+— that is the deployable win. The extra ensemble bump (18.75 → 18.27) needs N models and is for
+offline use only. `DISTILL_ENSEMBLE`/`DISTILL_ONLY` hook added to AvatarPoserModel.
+
 ## 7. Next steps
 
 - [x] Ensemble the 3 nymfull seeds → dip_test = **18.27 SIP, a NEW BEST** (beats prior 18.37; vs
       18.75 single-model mean). Just 3 same-arch AvatarPoser seeds, all Nymeria-pretrained.
 - [ ] nymfull seed 4–5 to tighten p, and one more nym80 seed to confirm mid-dose neutrality.
-- [ ] Rebuild the full best-ever ensemble with **Nymeria-pretrained** members → chase 18.37.
+- [x] Beat 18.37 already (3-seed nymfull ensemble 18.27). Distillation to 1 model: does NOT recover it (see 6b).
 - [ ] Optional: LSTM (not just AvatarPoser) Nymeria arm, since the 18.37 ensemble mixed both.
 - [ ] (Backlog, user idea) joint-position IMUPoser trained on Nymeria's native SMPL joints.
