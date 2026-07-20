@@ -54,6 +54,15 @@ class AvatarPoserModel(pl.LightningModule):
         self.register_buffer("_sip_dims",
                              torch.tensor([d for j in (1, 2, 16, 17) for d in range(j * 6, j * 6 + 6)]),
                              persistent=False)
+        # ENSEMBLE DISTILLATION (DISTILL_ENSEMBLE=<ckpt,ckpt,...>): match the MEAN r6d pose of a frozen
+        # ensemble of AvatarPoser members evaluated on the SAME input, so one student inherits the
+        # ensemble's variance-reduced prediction and deploys at 1x inference. DISTILL_W weights the term;
+        # DISTILL_ONLY=1 drops the GT pose/joint/IK losses (pure imitation). Loaded in on_fit_start so the
+        # frozen members (built from this same class) never recurse into loading their own ensemble.
+        self.distill_ensemble = os.environ.get("DISTILL_ENSEMBLE")
+        self.distill_w = float(os.environ.get("DISTILL_W", "1.0"))
+        self.distill_only = bool(os.environ.get("DISTILL_ONLY"))
+        self._ens = None
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -61,6 +70,18 @@ class AvatarPoserModel(pl.LightningModule):
 
     def on_fit_start(self):
         self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
+        if self.distill_ensemble and self._ens is None:
+            from imuposer.models.utils import get_model
+            members = []
+            for ck in self.distill_ensemble.split(","):
+                sd = torch.load(ck, map_location="cpu", weights_only=False)["state_dict"]
+                m = get_model(self.config); m.load_state_dict(sd, strict=False)
+                m.eval().to(self.device)
+                for p in m.parameters():
+                    p.requires_grad_(False)
+                members.append(m)
+            self._ens = members
+            print(f"[distill] loaded {len(members)}-member ensemble teacher, w={self.distill_w} only={self.distill_only}")
 
     def forward(self, imu_inputs, imu_lens):
         T = imu_inputs.size(1)
@@ -79,6 +100,17 @@ class AvatarPoserModel(pl.LightningModule):
         B, T, _ = imu.shape
         pred_pose = self(imu, lens)[:, :, :self.n_pose_output]
         target_pose = target[:, :, :self.n_pose_output]
+        # ENSEMBLE DISTILLATION: pull the student toward the frozen ensemble's mean r6d pose.
+        if self._ens is not None:
+            with torch.no_grad():
+                teacher_pose = sum(m(imu, lens)[:, :, :self.n_pose_output] for m in self._ens) / len(self._ens)
+            distill = self.distill_w * self.loss(pred_pose, teacher_pose)
+            if self.distill_only:
+                return distill                                # pure imitation, no GT terms
+            return distill + self._gt_loss(imu, pred_pose, target_pose, B, T)
+        return self._gt_loss(imu, pred_pose, target_pose, B, T)
+
+    def _gt_loss(self, imu, pred_pose, target_pose, B, T):
         loss = self.loss(pred_pose, target_pose)
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])
