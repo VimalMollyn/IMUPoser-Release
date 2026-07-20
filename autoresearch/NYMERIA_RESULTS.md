@@ -1,6 +1,6 @@
 # Nymeria for sparse-IMU pose (lw_rp_h) — results
 
-**Status: POSITIVE (modest but statistically significant and reproducible).**
+**Status: POSITIVE — NEW BEST-EVER (18.27 dip_test SIP, beats prior 18.37).**
 Adding 242.6 h of NymeriaPlus everyday in-the-wild motion to AMASS pretraining improves the
 `lw_rp_h` DIP/SIP deliverable by **~0.34° SIP** (Welch p=0.019, 3 seeds), the first clean positive
 data lever after a long run of neutral/negative ones. It is the mirror image of the WHIP result.
@@ -81,6 +81,7 @@ nymeria=full), `chain_nym_ft.sh` (stage-2 FT + eval), `offline_fit.py --iters 0`
 | **0 h** (control, curated-12) | 19.03, 19.15, 18.90, 19.29 | **19.09 ± 0.17** | n=4; strong control (old DIP-only was 19.20) |
 | **80.9 h** (nym80) | 18.91, 19.07 | **18.99** | n=2; straddles the control mean → NEUTRAL |
 | **242.6 h** (nymfull, all 1100) | 18.83, 18.76, 18.66 | **18.75 ± 0.085** | n=3; **all below control min**, tight |
+| **242.6 h, 3-seed ENSEMBLE** | — | **18.27** | **NEW BEST-EVER** (prior 18.37 mixed ensemble) |
 
 - **Monotonic in the means: 19.09 → 18.99 → 18.75.** Opposite sign to WHIP (19.20 → 20.68 → 21.15).
 - **Full dose is significant:** gap **0.34°**, **Welch p = 0.019** (n=3 vs n=4); all three full-dose
@@ -109,7 +110,8 @@ fold Nymeria pretraining into the full ensemble recipe to try to push past 18.37
 
 ## 7. Next steps
 
-- [ ] Ensemble the 3 nymfull seeds → dip_test (does averaging beat the 18.75 single-model mean?).
+- [x] Ensemble the 3 nymfull seeds → dip_test = **18.27 SIP, a NEW BEST** (beats prior 18.37; vs
+      18.75 single-model mean). Just 3 same-arch AvatarPoser seeds, all Nymeria-pretrained.
 - [ ] nymfull seed 4–5 to tighten p, and one more nym80 seed to confirm mid-dose neutrality.
 - [ ] Rebuild the full best-ever ensemble with **Nymeria-pretrained** members → chase 18.37.
 - [ ] Optional: LSTM (not just AvatarPoser) Nymeria arm, since the 18.37 ensemble mixed both.
