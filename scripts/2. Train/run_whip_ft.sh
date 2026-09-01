@@ -13,7 +13,7 @@ GPU="${1:?gpu}"; shift
 for spec in "$@"; do
   IFS='|' read -r tag traindata valfiles extra <<< "$spec"
   dir="$OUT/$tag"; mkdir -p "$dir"
-  env MODEL=AvatarPoserModel TF_LR=1e-4 EPOCHS=60 TRAIN_COMBO=lw_rp_h \
+  env MODEL=AvatarPoserModel TF_LR=1e-4 EPOCHS=60 TRAIN_COMBO="${TRAIN_COMBO:-lw_rp_h}" \
       TRAIN_DATASETS="$traindata" VAL_FILES="$valfiles" $extra \
       GPUS="$GPU" CONTINUE_FROM="$BASE" CHECKPOINT_DIR="$dir" WANDB_RUN_NAME="whipft_$tag" \
       uv run python "1. Train Global Model.py" --combo_id global --experiment whipft \

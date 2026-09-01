@@ -63,6 +63,17 @@ class AvatarPoserModel(pl.LightningModule):
         self.distill_w = float(os.environ.get("DISTILL_W", "1.0"))
         self.distill_only = bool(os.environ.get("DISTILL_ONLY"))
         self._ens = None
+        # PART / DECOUPLED model (PART_LOSS_JOINTS=13,16,18,20): supervise ONLY the r6d of the listed
+        # joints (e.g. a single-wrist model that predicts just its own arm), so a per-sensor decoupled
+        # model can be trained. When set, the FK joint-position and SIP terms are dropped (a distal joint's
+        # POSITION depends on the un-supervised torso frame, which would inject noise); the IK sensor-
+        # consistency term is kept. Regional predictions are stitched at eval by decoupled_eval.py.
+        _pj = os.environ.get("PART_LOSS_JOINTS")
+        self.part_joints = [int(x) for x in _pj.split(",")] if _pj else None
+        if self.part_joints:
+            self.register_buffer("_part_dims",
+                                 torch.tensor([d for j in self.part_joints for d in range(j * 6, j * 6 + 6)]),
+                                 persistent=False)
         self.training_step_outputs = []
         self.validation_step_outputs = []
         self.test_step_outputs = []
@@ -111,6 +122,18 @@ class AvatarPoserModel(pl.LightningModule):
         return self._gt_loss(imu, pred_pose, target_pose, B, T)
 
     def _gt_loss(self, imu, pred_pose, target_pose, B, T):
+        if self.part_joints is not None:
+            # decoupled/part model: supervise only the region's local r6d + keep the IK sensor term.
+            loss = self.loss(pred_pose[..., self._part_dims], target_pose[..., self._part_dims])
+            grot = self.bodymodel.forward_kinematics(
+                pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[0]
+            obs_ori = imu[:, :, 15:60].reshape(B, T, 5, 3, 3)
+            present = obs_ori.abs().flatten(3).sum(-1) > 0
+            pred_so = grot[:, self.imu_joints].view(B, T, 5, 3, 3)
+            m = present.unsqueeze(-1).unsqueeze(-1)
+            if m.any():
+                loss = loss + self.ik_w * self.loss(pred_so * m, obs_ori * m)
+            return loss
         loss = self.loss(pred_pose, target_pose)
         if self.sip_w:
             loss = loss + self.sip_w * self.loss(pred_pose[..., self._sip_dims], target_pose[..., self._sip_dims])

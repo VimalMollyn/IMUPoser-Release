@@ -38,7 +38,7 @@ for spec in "$@"; do
     *) echo "unknown arm $arm" >&2; exit 1 ;;
   esac
   dir="$OUT/$tag"; mkdir -p "$dir"
-  env MODEL=AvatarPoserModel EPOCHS=60 TRAIN_COMBO=lw_rp_h AUG_CALIB_RAD=0.12217 \
+  env MODEL=AvatarPoserModel EPOCHS=60 TRAIN_COMBO="${TRAIN_COMBO:-lw_rp_h}" AUG_CALIB_RAD=0.12217 \
       TRAIN_DATASETS="$DATA" VAL_FILES=dip_train.pt $extra \
       GPUS="$GPU" CHECKPOINT_DIR="$dir" WANDB_RUN_NAME="nymbase_$tag" \
       uv run python "1. Train Global Model.py" --combo_id global --experiment nymeria \

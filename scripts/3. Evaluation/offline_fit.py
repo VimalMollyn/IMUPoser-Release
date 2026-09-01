@@ -176,6 +176,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="fval.pt")
     ap.add_argument("--members", default=",".join(DEFAULT_MEMBERS))
+    ap.add_argument("--combo", default="lw_rp_h", help="sensor combo to feed/eval (key in amass_combos), e.g. lw_rw_rp")
     ap.add_argument("--iters", type=int, default=300)
     ap.add_argument("--lr", type=float, default=0.05)
     ap.add_argument("--w_ori", type=float, default=1.0)
@@ -206,8 +207,8 @@ def main():
         cfg.model = _detect(sd); m = get_model(cfg); m.load_state_dict(sd, strict=False); return m.eval().to(dev)
     members = [build(n) for n in a.members.split(",")]
 
-    combo = amass_combos["lw_rp_h"]                       # [0,3,4]
-    sens_joints = [JI5[s] for s in combo]                 # [18,2,15]
+    combo = amass_combos[a.combo]                         # e.g. lw_rp_h [0,3,4], lw_rw_rp [0,1,3]
+    sens_joints = [JI5[s] for s in combo]                 # SMPL joints of the sensed slots
     sens_w = torch.tensor([a.thigh_w if JI5[s] == 2 else 1.0 for s in combo])
     if a.inject == "all":   inject_joints = set(sens_joints)
     elif a.inject == "safe": inject_joints = {18, 15}
@@ -264,8 +265,8 @@ def main():
             if abs(pjb[j] - pjr[j]) > 0.05 or tag:
                 print(f"    {j:2d} {JN[j]:5s} {pjb[j]:6.2f} -> {pjr[j]:6.2f}  ({pjr[j]-pjb[j]:+.2f}) {tag}")
     if a.save_pkl:
-        pickle.dump({"p_m": {"lw_rp_h": torch.cat(save_pr).numpy()},
-                     "t_m": {"lw_rp_h": torch.cat(save_gt).numpy()}}, open(a.save_pkl, "wb"))
+        pickle.dump({"p_m": {a.combo: torch.cat(save_pr).numpy()},
+                     "t_m": {a.combo: torch.cat(save_gt).numpy()}}, open(a.save_pkl, "wb"))
         print("  saved", a.save_pkl)
 
 
