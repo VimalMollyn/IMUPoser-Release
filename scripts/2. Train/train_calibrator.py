@@ -26,9 +26,11 @@ from imuposer.config import Config, amass_combos, original_amass_datasets, val_d
 from imuposer import math as M
 from imuposer.math.angular import r6d_to_rotation_matrix
 
-DD = Path("/media/vimal/T7_2TB/CHI23/processed_imuposer_data/processed_imuposer_25fps")
+DD = Path(os.environ.get("IMUPOSER_25FPS_DIR",
+                         "/media/vimal/T7_2TB/CHI23/processed_imuposer_data/processed_imuposer_25fps"))
 ACC_SCALE = 30.0
-WIN = 125
+FPS = float(os.environ.get("IMUPOSER_FPS", "25"))
+WIN = int(5 * FPS)                               # 5 s window: 125 @ 25fps, 250 @ 50fps
 EYE6 = torch.tensor([1., 0, 0, 0, 1, 0])
 
 

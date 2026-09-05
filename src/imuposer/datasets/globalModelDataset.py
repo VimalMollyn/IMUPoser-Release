@@ -46,6 +46,8 @@ class GlobalModelDataset(Dataset):
         # sensors, ONLY when self.augment is set (get_dataset turns it on for the train
         # set, never val/test). Magnitudes from env so experiments can sweep them.
         self.augment = False
+        # output frame rate (25 default; 50 for the 50Hz variant). Drives window length + drift-time.
+        self.fps = float(os.environ.get("IMUPOSER_FPS", "25"))
         self.aug_acc_std = float(os.environ.get("AUG_ACC_STD", "0"))
         self.aug_ori_std = float(os.environ.get("AUG_ORI_STD", "0"))
         # accelerometer realism (scaled units, i.e. m/s^2 / acc_scale): per-sensor constant BIAS and
@@ -116,7 +118,9 @@ class GlobalModelDataset(Dataset):
         need_tran = _aux == "tran"
         need_act = _aux == "activity"
 
-        window_length = self.config.max_sample_len * 25 // 60
+        # window length in frames = 5 s at the OUTPUT fps (max_sample_len=300 is the 60fps reference).
+        # IMUPOSER_FPS lets a 50Hz model use 250-frame windows; default 25 preserves the 125-frame window.
+        window_length = int(self.config.max_sample_len * self.fps // 60)
 
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname, weights_only=False)
@@ -200,7 +204,7 @@ class GlobalModelDataset(Dataset):
             # orientation drift: per-sensor constant angular-velocity bias integrated over time
             if self.aug_drift > 0 or (self.loose_sensors and self.aug_loose_drift > 0):
                 W = _combo_ori.shape[0]
-                t = (torch.arange(W, dtype=torch.float32) / 25.0).unsqueeze(1)  # seconds, (W,1)
+                t = (torch.arange(W, dtype=torch.float32) / self.fps).unsqueeze(1)  # seconds, (W,1)
                 for c in combo:
                     mag = self.aug_loose_drift if (c in self.loose_sensors and self.aug_loose_drift > 0) else self.aug_drift
                     if mag <= 0:
@@ -225,7 +229,7 @@ class GlobalModelDataset(Dataset):
             # approx ignores non-commutativity, fine at these magnitudes).
             if self.aug_gyro_rw > 0 or self.aug_gyro_n > 0:
                 W = _combo_ori.shape[0]
-                dt = 1.0 / 25.0
+                dt = 1.0 / self.fps
                 for c in combo:
                     bias = torch.cumsum(torch.randn(W, 3) * self.aug_gyro_rw * (dt ** 0.5), dim=0)  # rad/s
                     noise = torch.randn(W, 3) * self.aug_gyro_n                                      # rad/s

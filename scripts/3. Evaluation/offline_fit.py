@@ -28,7 +28,8 @@ from imuposer.math.angular import (r6d_to_rotation_matrix, rotation_matrix_to_r6
                                    angle_between, radian_to_degree, axis_angle_to_rotation_matrix)
 
 REPO = Path(__file__).resolve().parents[2]
-DD = Path("/media/vimal/T7_2TB/CHI23/processed_imuposer_data/processed_imuposer_25fps")
+DD = Path(os.environ.get("IMUPOSER_25FPS_DIR",
+                         "/media/vimal/T7_2TB/CHI23/processed_imuposer_data/processed_imuposer_25fps"))
 IGN = torch.tensor([0, 7, 8, 10, 11, 20, 21, 22, 23])
 SIP = [1, 2, 16, 17]
 FPS = 25.0

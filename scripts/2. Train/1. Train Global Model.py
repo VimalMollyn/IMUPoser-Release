@@ -54,7 +54,8 @@ config.batch_size = config.batch_size // len(gpus)
 # The canonical dataset-level split (config.val_datasets / config.test_datasets) is
 # applied automatically by get_datamodule -> get_dataset.
 config.processed_imu_poser_25fps = Path(os.environ.get(
-    "IMUPOSER_DATA_DIR", "/media/vimal/T7_2TB/CHI23/processed_imuposer_data")) / "processed_imuposer_25fps"
+    "IMUPOSER_DATA_DIR", "/media/vimal/T7_2TB/CHI23/processed_imuposer_data")) \
+    / os.environ.get("IMUPOSER_FPS_SUBDIR", "processed_imuposer_25fps")
 
 # Pin the checkpoint dir to a known location (used by the auto-restart watchdog so
 # resumes always read/write the same last.ckpt). Default is the timestamped dir.
