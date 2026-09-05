@@ -75,6 +75,20 @@ class GlobalModelDataset(Dataset):
         # about world-up (Y). The body motion is identical, only re-headed -> forces heading invariance.
         # The metric is root-relative so this never changes the target's score, only the input distribution.
         self.aug_yaw = bool(os.environ.get("AUG_YAW"))
+        # LOOSE-sensor augmentation (a phone in a pocket shifts/rotates vs a tightly-worn watch, breaking
+        # the fixed device-to-bone assumption our static T-pose calibration makes). Motivated by
+        # Loose-Inertial-Poser (CVPR'24) + TIC (SIGGRAPH'25). AUG_LOOSE_SENSORS lists the loose slot
+        # indices (0=lw,1=rw,2=lp,3=rp,4=h; e.g. "3" for a right-pocket phone); those sensors get, on top
+        # of the global aug above: a heavier per-window calibration offset (AUG_LOOSE_CALIB_RAD), heavier
+        # drift (AUG_LOOSE_DRIFT_RAD_S), extra accel jostle (AUG_LOOSE_ACC_STD, scaled units), and a
+        # mid-window "re-seating" step change in orientation (AUG_LOOSE_RESEAT_RAD) modelling the phone
+        # re-settling. Zeros -> the loose sensor just uses the global magnitudes.
+        _loose = os.environ.get("AUG_LOOSE_SENSORS", "")
+        self.loose_sensors = set(int(x) for x in _loose.split(",") if x != "") if _loose else set()
+        self.aug_loose_calib = float(os.environ.get("AUG_LOOSE_CALIB_RAD", "0"))
+        self.aug_loose_drift = float(os.environ.get("AUG_LOOSE_DRIFT_RAD_S", "0"))
+        self.aug_loose_acc_std = float(os.environ.get("AUG_LOOSE_ACC_STD", "0"))
+        self.aug_loose_reseat = float(os.environ.get("AUG_LOOSE_RESEAT_RAD", "0"))
         self.data = self.load_data()
 
     def load_data(self):
@@ -175,19 +189,36 @@ class GlobalModelDataset(Dataset):
         if self.augment:
             # GlobalPose-style calibration/mounting error: rotate each present sensor's
             # orientation by a random rotation, constant over the window (per-sensor).
-            if self.aug_calib > 0:
+            if self.aug_calib > 0 or (self.loose_sensors and self.aug_loose_calib > 0):
                 for c in combo:
-                    aa = torch.randn(3) * self.aug_calib                       # axis-angle (rad)
+                    mag = self.aug_loose_calib if (c in self.loose_sensors and self.aug_loose_calib > 0) else self.aug_calib
+                    if mag <= 0:
+                        continue
+                    aa = torch.randn(3) * mag                                  # axis-angle (rad)
                     Rc = math.axis_angle_to_rotation_matrix(aa.unsqueeze(0))[0]  # 3x3
                     _combo_ori[:, c] = torch.matmul(Rc, _combo_ori[:, c])      # (W,3,3)
             # orientation drift: per-sensor constant angular-velocity bias integrated over time
-            if self.aug_drift > 0:
+            if self.aug_drift > 0 or (self.loose_sensors and self.aug_loose_drift > 0):
                 W = _combo_ori.shape[0]
                 t = (torch.arange(W, dtype=torch.float32) / 25.0).unsqueeze(1)  # seconds, (W,1)
                 for c in combo:
-                    bias = torch.randn(3) * self.aug_drift                     # rad/s
+                    mag = self.aug_loose_drift if (c in self.loose_sensors and self.aug_loose_drift > 0) else self.aug_drift
+                    if mag <= 0:
+                        continue
+                    bias = torch.randn(3) * mag                                # rad/s
                     Rd = math.axis_angle_to_rotation_matrix(bias.unsqueeze(0) * t)  # (W,3,3)
                     _combo_ori[:, c] = torch.matmul(Rd, _combo_ori[:, c])
+            # loose "re-seating": the pocket phone re-settles at a random time -> a step change in its
+            # calibration from that frame onward (models the phone shifting during use).
+            if self.loose_sensors and self.aug_loose_reseat > 0:
+                W = _combo_ori.shape[0]
+                for c in combo:
+                    if c not in self.loose_sensors:
+                        continue
+                    t0 = int(torch.randint(1, max(W, 2), (1,)).item())
+                    aa = torch.randn(3) * self.aug_loose_reseat
+                    Rr = math.axis_angle_to_rotation_matrix(aa.unsqueeze(0))[0]
+                    _combo_ori[t0:, c] = torch.matmul(Rr, _combo_ori[t0:, c])
             # GlobalPose-style realistic gyro-integration drift: random-walk bias + white gyro noise,
             # integrated -> sqrt-time random-walk orientation error (the real-IMU drift; richer than the
             # constant-bias model above). Vectorized: accumulated rotation-vector via cumsum (small-error
@@ -214,6 +245,11 @@ class GlobalModelDataset(Dataset):
                         _combo_acc[:, c] = _combo_acc[:, c] + torch.randn(3) * self.aug_acc_bias
             if self.aug_acc_std > 0:
                 _combo_acc[:, combo] += torch.randn_like(_combo_acc[:, combo]) * self.aug_acc_std
+            # extra accel jostle on loose sensors (a phone bounces in the pocket independently of the limb)
+            if self.loose_sensors and self.aug_loose_acc_std > 0:
+                for c in combo:
+                    if c in self.loose_sensors:
+                        _combo_acc[:, c] += torch.randn_like(_combo_acc[:, c]) * self.aug_loose_acc_std
             if self.aug_ori_std > 0:
                 _combo_ori[:, combo] += torch.randn_like(_combo_ori[:, combo]) * self.aug_ori_std
 
