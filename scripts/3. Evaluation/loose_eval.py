@@ -66,7 +66,30 @@ def corrupt_pocket(ori5, acc5, slot, sev, g):
     return o, a
 
 
-def eval_model(model, data, combo, dev, bm, corrupt=False, slot=3, sev=0.30, seed=0):
+def load_calibrator(path, dev):
+    """Load the TIC-style calibrator (defined in scripts/2. Train/train_calibrator.py)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tcal", str(REPO / "scripts/2. Train/train_calibrator.py"))
+    tc = importlib.util.module_from_spec(spec); spec.loader.exec_module(tc)
+    ck = torch.load(path, map_location=dev, weights_only=False)
+    net = tc.Calibrator().to(dev); net.load_state_dict(ck["state_dict"]); net.eval()
+    return net
+
+
+def apply_calibrator(net, ca, co, slot, dev):
+    """Feed the corrupted window through the calibrator; apply its rotation + accel correction to slot."""
+    n = ca.shape[0]
+    inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).unsqueeze(0).to(dev)
+    with torch.no_grad():
+        r6, dacc = net(inp)
+    Rcorr = r6d_to_rotation_matrix(r6.reshape(-1, 6)).view(n, 3, 3)
+    co = co.clone(); ca = ca.clone()
+    co[:, slot] = torch.matmul(Rcorr.cpu(), co[:, slot])
+    ca[:, slot] = ca[:, slot] + dacc[0].cpu()
+    return ca, co
+
+
+def eval_model(model, data, combo, dev, bm, corrupt=False, slot=3, sev=0.30, seed=0, calibrator=None):
     I3 = torch.eye(3, device=dev)
     sip_sum, n_sum = 0.0, 0
     for ai, oi, gp in zip([d.view(-1, 6, 3)[:, :5].float() for d in data["acc"]],
@@ -78,6 +101,8 @@ def eval_model(model, data, combo, dev, bm, corrupt=False, slot=3, sev=0.30, see
             oi, ai = corrupt_pocket(oi, ai, slot, sev, g)
         ca = torch.zeros_like(ai); co = torch.zeros_like(oi)
         ca[:, combo] = ai[:, combo] / ACC_SCALE; co[:, combo] = oi[:, combo]
+        if calibrator is not None:                            # TIC-style correction of the loose slot
+            ca, co = apply_calibrator(calibrator, ca, co, slot, dev)
         inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).to(dev)
         with torch.no_grad():
             r6 = model(inp.unsqueeze(0), [n])[0, :, :144]
@@ -96,6 +121,7 @@ def main():
     ap.add_argument("--loose-slot", type=int, default=3, help="sensor slot to corrupt (3=rp)")
     ap.add_argument("--sev", type=float, default=0.30, help="corruption severity (rad std of calib/reseat)")
     ap.add_argument("--data", default="dip_test.pt"); ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--calibrator", default=None, help="TIC calibrator ckpt: also report loose+calibrator")
     a = ap.parse_args()
 
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
@@ -107,14 +133,23 @@ def main():
     combo = amass_combos[a.combo]
     data = torch.load(DD / a.data, weights_only=False)
 
-    print(f"[loose_eval] combo={a.combo} corrupt slot={a.loose_slot} sev={a.sev}  data={a.data}")
-    print(f"{'model':40s} {'clean SIP':>10s} {'loose SIP':>10s} {'degradation':>12s}")
+    cal = load_calibrator(a.calibrator, dev) if a.calibrator else None
+    print(f"[loose_eval] combo={a.combo} corrupt slot={a.loose_slot} sev={a.sev}  data={a.data}"
+          + (f"  calibrator={Path(a.calibrator).parent.name}" if cal else ""))
+    hdr = f"{'model':40s} {'clean SIP':>10s} {'loose SIP':>10s} {'degradation':>12s}"
+    if cal:
+        hdr += f" {'loose+cal':>10s} {'cal degr':>10s}"
+    print(hdr)
     for path in a.members.split(","):
         m = build(path, cfg, dev)
         clean = eval_model(m, data, combo, dev, bm, corrupt=False)
         loose = eval_model(m, data, combo, dev, bm, corrupt=True, slot=a.loose_slot, sev=a.sev)
         name = Path(path).parent.name if path.endswith(".ckpt") else Path(path).name
-        print(f"{name:40s} {clean:10.2f} {loose:10.2f} {loose-clean:+11.2f}")
+        row = f"{name:40s} {clean:10.2f} {loose:10.2f} {loose-clean:+11.2f}"
+        if cal:
+            lc = eval_model(m, data, combo, dev, bm, corrupt=True, slot=a.loose_slot, sev=a.sev, calibrator=cal)
+            row += f" {lc:10.2f} {lc-clean:+10.2f}"
+        print(row)
     print("(lower loose SIP and smaller degradation = more robust to a shifting pocket phone)")
 
 
