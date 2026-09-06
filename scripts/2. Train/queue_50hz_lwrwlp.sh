@@ -39,28 +39,63 @@ else
   log "Nymeria 60fps intermediates already present, skipping re-fetch"
 fi
 
-# 2. resample ALL 60fps datasets (curated AMASS + Nymeria + DIP) -> 50fps set
-log "resampling to 50 fps -> $D50"
+# 2+3. resample 60fps -> 50fps, reclaiming each Nymeria chunk's 60fps IMMEDIATELY after it converts.
+# (Curated AMASS + DIP 60fps are kept; only Nymeria's ~41 GB of 60fps intermediates are the bloat.)
+# Interleaving keeps peak disk ~= the final 50fps set (~66 GB) instead of 60fps+50fps coexisting (~107 GB).
+log "resampling to 50 fps (per-Nymeria-chunk reclaim) -> $D50"
 cd "$REPO"
-uv run python - << PY
-import importlib.util
+DATA="$DATA" D50="$D50" uv run python - << 'PY'
+import importlib.util, os, torch
 from pathlib import Path
-from imuposer.config import Config
-cfg = Config(project_root_dir='.', mkdir=False)
-cfg.processed_imu_poser = Path("$DATA")/"processed_imuposer"
-cfg.processed_imu_poser_25fps = Path("$D50")            # reuse the resampler, writing to the 50fps dir
+from imuposer import math as M
+DATA = Path(os.environ["DATA"]); D50 = Path(os.environ["D50"]); D50.mkdir(parents=True, exist_ok=True)
 spec = importlib.util.spec_from_file_location('p2', 'scripts/1. Preprocessing/2. preprocess_all_to_imuposer_at_25fps.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-m.target_fps = 50                                        # <-- 50 fps instead of 25
-m.to_25fps(cfg)
+TF = 50
+rs, sm = m._resample, m.smooth_avg
+
+def convert_dir(fpath, out):
+    if out.exists(): return
+    joint = [rs(x, TF) for x in torch.load(fpath/"joint.pt")]
+    pose = [M.axis_angle_to_rotation_matrix(rs(x, TF).contiguous()).view(-1,24,3,3) for x in torch.load(fpath/"pose.pt")]
+    shape = torch.load(fpath/"shape.pt")
+    tran = [rs(x, TF) for x in torch.load(fpath/"tran.pt")]
+    vacc = [sm(rs(x, TF), s=5) for x in torch.load(fpath/"vacc.pt")]
+    vrot = [rs(x, TF) for x in torch.load(fpath/"vrot.pt")]
+    torch.save({"joint":joint,"pose":pose,"shape":shape,"tran":tran,"acc":vacc,"ori":vrot}, out)
+
+CURATED = {"CMU","BioMotionLab_NTroje","BMLmovi","KIT","EKUT","Transitions_mocap","HumanEva",
+           "SFU","HUMAN4D","SSM_synced","MPI_mosh","MPI_Limits"}
+amass = DATA/"processed_imuposer"/"AMASS"
+for fpath in sorted(amass.iterdir()):
+    if not (fpath/"pose.pt").exists(): continue
+    is_nym = fpath.name.startswith("Nymeria_")
+    if fpath.name not in CURATED and not is_nym:      # only curated-12 + Nymeria are used for training
+        continue
+    convert_dir(fpath, D50/f"{fpath.name}.pt")
+    if is_nym:                                        # reclaim this chunk's 60fps immediately
+        for p in fpath.glob("*.pt"): p.unlink()
+    print(f"  {fpath.name} done", flush=True)
+
+# DIP (writes dip_train.pt / dip_test.pt); keep DIP 60fps
+dip = DATA/"processed_imuposer"/"DIP_IMU"
+if dip.exists():
+    for fpath in sorted(dip.iterdir()):
+        out = D50/f"dip_{fpath.name}.pt"
+        if out.exists(): continue
+        joint = [rs(x, TF) for x in torch.load(fpath/"joint.pt")]
+        pose = [M.axis_angle_to_rotation_matrix(rs(x, TF).contiguous()).view(-1,24,3,3) for x in torch.load(fpath/"pose.pt")]
+        shape = torch.load(fpath/"shape.pt"); tran = [rs(x, TF) for x in torch.load(fpath/"tran.pt")]
+        acc = [sm(rs(x, TF), s=5) for x in torch.load(fpath/"accs.pt")]; rot = [rs(x, TF) for x in torch.load(fpath/"oris.pt")]
+        torch.save({"joint":joint,"pose":pose,"shape":shape,"tran":tran,"acc":acc,"ori":rot}, out)
+        print(f"  dip_{fpath.name} done", flush=True)
 print("50fps resample complete")
 PY
 
-# 3. reclaim the 60fps Nymeria intermediates (keep the 50fps .pt)
-log "reclaiming 60fps Nymeria intermediates"
-for d in "$DATA"/processed_imuposer/AMASS/Nymeria_*; do
-  b=$(basename "$d"); [ -f "$D50/${b}.pt" ] && rm -f "$d"/*.pt
-done
+# disk guard: abort before training if space got dangerously low (don't corrupt a run)
+FREE_GB=$(df --output=avail -BG /media/vimal/T7_2TB | tail -1 | tr -dc '0-9')
+log "free disk after resample: ${FREE_GB} GB"
+if [ "${FREE_GB:-0}" -lt 8 ]; then log "ABORT: <8 GB free, not starting training"; exit 1; fi
 
 # 4. reproduce the ftrain/fval split (a fixed 32/9 permutation of dip_train) at 50fps by matching each
 #    25fps ftrain/fval sequence back to its dip_train index, then slicing the 50fps dip_train.
