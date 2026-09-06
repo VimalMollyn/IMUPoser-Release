@@ -19,7 +19,12 @@ sleep 60
 log "25 Hz jobs done. Starting 50 Hz build."
 
 # 1. re-fetch Nymeria @60fps (regenerate the intermediates we reclaimed). 4 shards, 2 per GPU.
-if [ "$(ls -d "$DATA"/processed_imuposer/AMASS/Nymeria_* 2>/dev/null | wc -l)" -lt 80 ]; then
+# NOTE: count actual .pt files, not dirs -- empty resume-marker dirs remain after reclaiming and
+# would falsely look "present". Also delete any empty Nymeria dir first, else nymeria_fetch's resume
+# logic (skip existing dirs) would skip regenerating them.
+find "$DATA"/processed_imuposer/AMASS -maxdepth 1 -type d -name "Nymeria_*" \
+  -exec sh -c '[ -z "$(ls "$1"/*.pt 2>/dev/null)" ] && rmdir "$1" 2>/dev/null' _ {} \;
+if [ "$(ls "$DATA"/processed_imuposer/AMASS/Nymeria_*/pose.pt 2>/dev/null | wc -l)" -lt 80 ]; then
   log "re-fetching Nymeria @60fps ..."
   cd "$REPO"
   pids=()
