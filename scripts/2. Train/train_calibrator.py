@@ -51,6 +51,60 @@ class Calibrator(nn.Module):
         return r6, o[..., 6:]                  # (B,T,6), (B,T,3)
 
 
+class MultiCalibrator(nn.Module):
+    r"""Same 60-dim window -> a per-frame correction (r6d rotation + accel delta) for EACH of `slots`
+    (e.g. both watches + the pocket phone), so one net corrects every worn sensor's mounting/drift at
+    once instead of only the loose pocket. Checkpoint stores `slots` so the eval/demo apply the right
+    ones. Backward-compatible: the single-slot Calibrator above still loads the old checkpoints."""
+    def __init__(self, slots, d_model=128, nhead=4, layers=3, ff=512, dropout=0.1):
+        super().__init__()
+        self.slots = list(slots)
+        self.inp = nn.Linear(60, d_model)
+        enc = nn.TransformerEncoderLayer(d_model, nhead, ff, dropout, batch_first=True)
+        self.enc = nn.TransformerEncoder(enc, layers)
+        self.out = nn.Linear(d_model, 9 * len(self.slots))
+        nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)   # start at identity/zero correction
+
+    def forward(self, x):                     # x: (B,T,60)
+        B, T = x.shape[:2]; S = len(self.slots)
+        o = self.out(self.enc(self.inp(x))).view(B, T, S, 9)
+        r6 = o[..., :6] + EYE6.to(o.device)    # (B,T,S,6) residual around identity
+        return r6, o[..., 6:]                  # (B,T,S,6), (B,T,S,3)
+
+
+# per-slot corruption severity (rad): watches/head are worn tight but have mounting/calibration error
+# and can rotate on the wrist during use (mild); a pocket phone is loose (heavy). Slot order lw,rw,lp,rp,h.
+SEV_RANGE = {0: (0.05, 0.20), 1: (0.05, 0.20), 4: (0.05, 0.20),   # lw, rw, h  (tight)
+             2: (0.10, 0.45), 3: (0.10, 0.45)}                    # lp, rp     (loose pocket)
+
+
+def corrupt_slot(a, o, slot, dev, lo, hi):
+    """In-place-style loose corruption of one slot (calib offset + drift + mid-window re-seat + jostle),
+    with severity drawn per-sample in [lo, hi] rad. Returns nothing; mutates a, o."""
+    B, T = a.shape[:2]
+    sev = (lo + (hi - lo) * torch.rand(B, 1, device=dev))
+    Rc = M.axis_angle_to_rotation_matrix(torch.randn(B, 3, device=dev) * sev)
+    o[:, :, slot] = torch.matmul(Rc.unsqueeze(1), o[:, :, slot])
+    t = (torch.arange(T, device=dev, dtype=torch.float32) / 25.0).view(1, T, 1)
+    bias = torch.randn(B, 3, device=dev) * (sev * 0.13)
+    d = M.axis_angle_to_rotation_matrix((bias.unsqueeze(1) * t).reshape(-1, 3)).view(B, T, 3, 3)
+    o[:, :, slot] = torch.matmul(d, o[:, :, slot])
+    for i in range(B):
+        t0 = int(torch.randint(1, T, (1,)).item())
+        Rr = M.axis_angle_to_rotation_matrix((torch.randn(3, device=dev) * sev[i]).unsqueeze(0))[0]
+        o[i, t0:, slot] = torch.matmul(Rr, o[i, t0:, slot])
+    a[:, :, slot] = a[:, :, slot] + torch.randn(B, T, 3, device=dev) * (sev.unsqueeze(1) * 0.5)
+
+
+def corrupt_multi(acc, ori, slots, dev):
+    """Corrupt every slot in `slots` with its own realistic severity. Returns corrupted (acc, ori)."""
+    a, o = acc.clone(), ori.clone()
+    for s in slots:
+        lo, hi = SEV_RANGE.get(s, (0.10, 0.45))
+        corrupt_slot(a, o, s, dev, lo, hi)
+    return a, o
+
+
 def load_windows(combo, files, cap_frames=None):
     """Return clean windows: acc (K,WIN,5,3) SCALED, ori (K,WIN,5,3,3). Only combo sensors kept nonzero."""
     accs, oris, tot = [], [], 0
@@ -110,6 +164,9 @@ def train_files(combo):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--combo", default="lw_rw_rp"); ap.add_argument("--loose-slot", type=int, default=3)
+    ap.add_argument("--slots", default="", help="comma-separated slots to correct (e.g. 0,1,2 = both "
+                    "watches + left pocket); default 'all' = every sensed slot in the combo. Empty -> "
+                    "single-slot mode on --loose-slot (the original calibrator).")
     ap.add_argument("--epochs", type=int, default=40); ap.add_argument("--bs", type=int, default=64)
     ap.add_argument("--lr", type=float, default=3e-4); ap.add_argument("--out", required=True)
     ap.add_argument("--files", default="", help="comma-separated file override (for quick tests)")
@@ -117,8 +174,13 @@ def main():
 
     dev = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     combo = amass_combos[a.combo]; slot = a.loose_slot
+    # multi-slot mode: --slots all -> every sensed slot; --slots 0,1,2 -> those; empty -> single-slot
+    multi_slots = None
+    if a.slots:
+        multi_slots = list(combo) if a.slots.strip() == "all" else [int(x) for x in a.slots.split(",")]
     files = a.files.split(",") if a.files else train_files(a.combo)
-    print(f"[cal] loading {len(files)} files (combo {a.combo}, loose slot {slot}) ...", flush=True)
+    tgt = f"slots {multi_slots}" if multi_slots else f"loose slot {slot}"
+    print(f"[cal] loading {len(files)} files (combo {a.combo}, {tgt}) ...", flush=True)
     acc, ori = load_windows(combo, files)
     print(f"[cal] {acc.shape[0]} windows", flush=True)
 
@@ -129,12 +191,12 @@ def main():
             import wandb as wb
             wb.init(project=os.environ.get("WANDB_PROJECT", "imu_calibrator"),
                     name=os.environ.get("WANDB_RUN_NAME", Path(a.out).name),
-                    config={"combo": a.combo, "loose_slot": slot, "epochs": a.epochs,
+                    config={"combo": a.combo, "slots": multi_slots, "loose_slot": slot, "epochs": a.epochs,
                             "bs": a.bs, "lr": a.lr, "n_windows": int(acc.shape[0]), "n_files": len(files)})
         except Exception as e:
             print(f"[cal] wandb disabled ({e})", flush=True); wb = None
 
-    net = Calibrator().to(dev)
+    net = (MultiCalibrator(multi_slots) if multi_slots else Calibrator()).to(dev)
     opt = torch.optim.Adam(net.parameters(), lr=a.lr)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     idx = torch.arange(acc.shape[0])
@@ -145,19 +207,37 @@ def main():
         for b in range(0, perm.numel(), a.bs):
             sel = perm[b:b+a.bs]
             ca, co = acc[sel].to(dev), ori[sel].to(dev)
-            ka, ko = corrupt(ca, co, slot, dev)                          # corrupted inputs
-            inp = torch.cat([ka.reshape(ka.shape[0], WIN, -1), ko.reshape(ko.shape[0], WIN, -1)], -1)
-            r6, dacc = net(inp)
-            Rcorr = r6d_to_rotation_matrix(r6.reshape(-1, 6)).view(-1, WIN, 3, 3)
-            rec_ori = torch.matmul(Rcorr, ko[:, :, slot])               # corrected pocket ori
-            rec_acc = ka[:, :, slot] + dacc                             # corrected pocket acc
-            loss_o = ((rec_ori - co[:, :, slot]) ** 2).sum(dim=(-1, -2)).mean()
-            loss_a = ((rec_acc - ca[:, :, slot]) ** 2).sum(-1).mean()
-            loss = loss_o + loss_a
+            B = ca.shape[0]
+            if multi_slots:
+                ka, ko = corrupt_multi(ca, co, multi_slots, dev)         # corrupt every listed slot
+                inp = torch.cat([ka.reshape(B, WIN, -1), ko.reshape(B, WIN, -1)], -1)
+                r6, dacc = net(inp)                                      # (B,WIN,S,6), (B,WIN,S,3)
+                loss_o = loss_a = base_o = 0.0
+                for i, s in enumerate(multi_slots):
+                    Rc = r6d_to_rotation_matrix(r6[:, :, i].reshape(-1, 6)).view(B, WIN, 3, 3)
+                    rec_ori = torch.matmul(Rc, ko[:, :, s])
+                    rec_acc = ka[:, :, s] + dacc[:, :, i]
+                    loss_o = loss_o + ((rec_ori - co[:, :, s]) ** 2).sum(dim=(-1, -2)).mean()
+                    loss_a = loss_a + ((rec_acc - ca[:, :, s]) ** 2).sum(-1).mean()
+                    with torch.no_grad():
+                        base_o = base_o + ((ko[:, :, s] - co[:, :, s]) ** 2).sum(dim=(-1, -2)).mean().item()
+                loss = loss_o + loss_a
+            else:
+                ka, ko = corrupt(ca, co, slot, dev)                      # corrupted inputs (single slot)
+                inp = torch.cat([ka.reshape(B, WIN, -1), ko.reshape(B, WIN, -1)], -1)
+                r6, dacc = net(inp)
+                Rcorr = r6d_to_rotation_matrix(r6.reshape(-1, 6)).view(-1, WIN, 3, 3)
+                rec_ori = torch.matmul(Rcorr, ko[:, :, slot])           # corrected pocket ori
+                rec_acc = ka[:, :, slot] + dacc                         # corrected pocket acc
+                loss_o = ((rec_ori - co[:, :, slot]) ** 2).sum(dim=(-1, -2)).mean()
+                loss_a = ((rec_acc - ca[:, :, slot]) ** 2).sum(-1).mean()
+                loss = loss_o + loss_a
+                with torch.no_grad():   # reference: uncorrected orientation error (how bad the corruption is)
+                    base_o = ((ko[:, :, slot] - co[:, :, slot]) ** 2).sum(dim=(-1, -2)).mean().item()
             opt.zero_grad(); loss.backward(); opt.step()
-            with torch.no_grad():   # reference: uncorrected orientation error (how bad the corruption is)
-                base_o = ((ko[:, :, slot] - co[:, :, slot]) ** 2).sum(dim=(-1, -2)).mean().item()
-            tot += loss.item(); to_ += loss_o.item(); ta_ += loss_a.item(); tbase += base_o; nb += 1
+            _lo = loss_o.item() if torch.is_tensor(loss_o) else loss_o
+            _la = loss_a.item() if torch.is_tensor(loss_a) else loss_a
+            tot += loss.item(); to_ += _lo; ta_ += _la; tbase += base_o; nb += 1
         nb = max(nb, 1)
         avg, avg_o, avg_a, avg_base = tot/nb, to_/nb, ta_/nb, tbase/nb
         if ep % 5 == 0 or ep == a.epochs - 1:
@@ -165,9 +245,11 @@ def main():
         if wb is not None:
             wb.log({"epoch": ep, "loss": avg, "loss_ori": avg_o, "loss_acc": avg_a,
                     "uncorrected_ori": avg_base, "ori_recovered_frac": 1.0 - avg_o/max(avg_base, 1e-9)})
+        meta = {"state_dict": net.state_dict(), "combo": a.combo,
+                "slots": multi_slots, "slot": slot}   # slots set -> MultiCalibrator; else single-slot
         if avg < best:
-            best = avg; torch.save({"state_dict": net.state_dict(), "combo": a.combo, "slot": slot}, out / "best.ckpt")
-    torch.save({"state_dict": net.state_dict(), "combo": a.combo, "slot": slot}, out / "last.ckpt")
+            best = avg; torch.save(meta, out / "best.ckpt")
+    torch.save(meta, out / "last.ckpt")
     print(f"[cal] DONE best_loss {best:.4f} -> {out}", flush=True)
     if wb is not None:
         wb.finish()

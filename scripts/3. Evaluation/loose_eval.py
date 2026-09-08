@@ -67,25 +67,35 @@ def corrupt_pocket(ori5, acc5, slot, sev, g):
 
 
 def load_calibrator(path, dev):
-    """Load the TIC-style calibrator (defined in scripts/2. Train/train_calibrator.py)."""
+    """Load a calibrator (single-slot Calibrator or all-sensor MultiCalibrator, per the ckpt's `slots`)."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("tcal", str(REPO / "scripts/2. Train/train_calibrator.py"))
     tc = importlib.util.module_from_spec(spec); spec.loader.exec_module(tc)
     ck = torch.load(path, map_location=dev, weights_only=False)
-    net = tc.Calibrator().to(dev); net.load_state_dict(ck["state_dict"]); net.eval()
+    slots = ck.get("slots")
+    net = (tc.MultiCalibrator(slots) if slots else tc.Calibrator()).to(dev)
+    net.load_state_dict(ck["state_dict"]); net.eval()
+    net._slots = slots                                   # None -> single-slot, else the corrected slots
     return net
 
 
 def apply_calibrator(net, ca, co, slot, dev):
-    """Feed the corrupted window through the calibrator; apply its rotation + accel correction to slot."""
+    """Feed the corrupted window through the calibrator; apply its correction. A MultiCalibrator corrects
+    every slot in net._slots; a single-slot Calibrator corrects `slot`."""
     n = ca.shape[0]
     inp = torch.cat([ca.reshape(n, -1), co.reshape(n, -1)], 1).unsqueeze(0).to(dev)
     with torch.no_grad():
         r6, dacc = net(inp)
-    Rcorr = r6d_to_rotation_matrix(r6.reshape(-1, 6)).view(n, 3, 3)
     co = co.clone(); ca = ca.clone()
-    co[:, slot] = torch.matmul(Rcorr.cpu(), co[:, slot])
-    ca[:, slot] = ca[:, slot] + dacc[0].cpu()
+    if getattr(net, "_slots", None):                     # multi-slot: (1,n,S,6)/(1,n,S,3)
+        for i, s in enumerate(net._slots):
+            Rc = r6d_to_rotation_matrix(r6[0, :, i].reshape(-1, 6)).view(n, 3, 3)
+            co[:, s] = torch.matmul(Rc.cpu(), co[:, s])
+            ca[:, s] = ca[:, s] + dacc[0, :, i].cpu()
+    else:
+        Rcorr = r6d_to_rotation_matrix(r6.reshape(-1, 6)).view(n, 3, 3)
+        co[:, slot] = torch.matmul(Rcorr.cpu(), co[:, slot])
+        ca[:, slot] = ca[:, slot] + dacc[0].cpu()
     return ca, co
 
 
