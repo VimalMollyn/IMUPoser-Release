@@ -43,7 +43,7 @@ FIELDS = {
     "joint": (24, 3),
     "tran": (3,),
 }
-_LOCK_STALE_S = 3 * 3600
+_LOCK_STALE_S = 15 * 60      # a pack takes seconds; a lock older than this was left by a killed process
 
 
 def _as_axis_angle(pose, L):
