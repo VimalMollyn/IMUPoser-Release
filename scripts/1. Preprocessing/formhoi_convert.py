@@ -45,6 +45,7 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--tag", default="FORMHOI")
     a = ap.parse_args()
+    torch.set_num_threads(2)
     dev = torch.device(f"cuda:{a.gpu}")
     from soma import SOMALayer
     from soma.assets import get_assets_dir

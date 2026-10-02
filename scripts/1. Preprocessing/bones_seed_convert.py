@@ -158,6 +158,7 @@ def main():
     ap.add_argument("--tag", default="BONES")
     ap.add_argument("--min_frames", type=int, default=60, help="drop clips shorter than this at 120fps")
     a = ap.parse_args()
+    torch.set_num_threads(2)
     dev = torch.device(f"cuda:{a.gpu}")
     cfg = Config(project_root_dir=str(Path(__file__).resolve().parents[2]), device=a.gpu, mkdir=False)
     bm = ParametricModel(cfg.og_smpl_model_path, device=dev)
@@ -182,8 +183,34 @@ def main():
         print(f"  wrote {p.name}: {len(buf['pose'])} clips, {h:.2f} h | total {hours:.1f} h, {nclips} clips, {(time.time()-t0)/60:.1f} min", flush=True)
         buf = {k: [] for k in buf}; cid += 1
 
+    def pipelined_parse(pool, it, window):
+        """Pool.imap would read the whole 45 GB tar ahead of the consumer (no back-pressure) -> OOM, and a
+        naive read->map->process loop serialises gzip decompression with everything else. Pipeline instead:
+        a reader THREAD fills a bounded queue (zlib releases the GIL), at most `window` parse jobs are in
+        flight in the process pool, and results are consumed in order as they complete."""
+        import queue, threading
+        q = queue.Queue(maxsize=window * 2)
+        SENT = object()
+
+        def reader():
+            for item in it:
+                q.put(item)
+            q.put(SENT)
+        threading.Thread(target=reader, daemon=True).start()
+        pending = []
+        eof = False
+        while pending or not eof:
+            while not eof and len(pending) < window:
+                item = q.get()
+                if item is SENT:
+                    eof = True
+                else:
+                    pending.append(pool.apply_async(worker_parse, (item,)))
+            if pending:
+                yield pending.pop(0).get()
+
     with Pool(a.workers) as pool, torch.no_grad():
-        for name, hier, dt, data in pool.imap(worker_parse, iter_tar(TAR, a.limit), chunksize=4):
+        for name, hier, dt, data in pipelined_parse(pool, iter_tar(TAR, a.limit), window=8 * a.workers):
             if data.shape[0] < a.min_frames or not np.isfinite(data).all():
                 nskip += 1; continue
             if abs(1.0 / dt - SRC_FPS) > 1:

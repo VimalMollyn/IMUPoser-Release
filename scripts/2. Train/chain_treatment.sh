@@ -10,8 +10,10 @@ LOGS=/home/vimal/imuposer_data/logs
 log(){ echo "[chain $TAG $(date -Is)] $*"; }
 
 log "waiting for control run ($CLOG) and conversions ..."
-while ! grep -q "^\[.*\] DONE " "$CLOG" 2>/dev/null; do sleep 60; done
-log "control run done"
+if [ "$CLOG" != "none" ]; then
+  while ! grep -q "^\[.*\] DONE " "$CLOG" 2>/dev/null; do sleep 60; done
+  log "control run done"
+fi
 while ! { grep -q "^DONE MM_PhantomDance" "$LOGS/motionmillion_convert.log" 2>/dev/null \
        && grep -q "^DONE BONES" "$LOGS/bones_seed_convert.log" 2>/dev/null \
        && grep -q "^DONE FORMHOI" "$LOGS/formhoi_convert.log" 2>/dev/null; }; do sleep 60; done

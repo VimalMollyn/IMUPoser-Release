@@ -48,9 +48,12 @@ def rotation_6d_to_matrix(d6):
     return torch.stack((b1, b2, b3), dim=-2)
 
 
-def recover_smpl(x):
-    """x: (T,272) float -> pose_aa (T,24,3) torch, root_pos (T,3) torch (y-up, root JOINT position)."""
+def recover_smpl(x, dev=None):
+    """x: (T,272) float -> pose_aa (T,24,3) torch, root_pos (T,3) torch (y-up, root JOINT position).
+    Rotation math runs on `dev` (GPU) when given: the matrix->axis-angle conversion is vectorized."""
     x = torch.as_tensor(np.asarray(x, dtype=np.float32))
+    if dev is not None:
+        x = x.to(dev)
     T = x.shape[0]
     rot = rotation_6d_to_matrix(x[:, 8 + 6 * NJ:8 + 12 * NJ].reshape(T, NJ, 6))          # (T,22,3,3) local
     hd = rotation_6d_to_matrix(x[:, 2:8])                                                 # (T,3,3) heading diffs
@@ -59,18 +62,18 @@ def recover_smpl(x):
     dyaw = torch.atan2(hd[:, 0, 2], hd[:, 0, 0])
     yaw = torch.cumsum(dyaw, 0)
     c, s = torch.cos(yaw), torch.sin(yaw)
-    heading = torch.zeros(T, 3, 3)
+    heading = torch.zeros(T, 3, 3, device=x.device)
     heading[:, 0, 0] = c; heading[:, 0, 2] = s; heading[:, 1, 1] = 1; heading[:, 2, 0] = -s; heading[:, 2, 2] = c
     inv = heading.transpose(1, 2)
     rot[:, 0] = inv @ rot[:, 0]
-    vel = torch.zeros(T, 3)
+    vel = torch.zeros(T, 3, device=x.device)
     vel[:, 0] = x[:, 0]; vel[:, 2] = x[:, 1]
     vel[1:] = (inv[:-1] @ vel[1:].unsqueeze(-1)).squeeze(-1)
     root = torch.cumsum(vel, 0)
     root[:, 1] = x[:, 8 + 1]                                                              # root height
     aa = M.rotation_matrix_to_axis_angle(rot.reshape(-1, 3, 3)).view(T, NJ, 3)
-    aa = torch.cat([aa, torch.zeros(T, 2, 3)], 1)                                         # hands off (24 joints)
-    return aa, root
+    aa = torch.cat([aa, torch.zeros(T, 2, 3, device=x.device)], 1)                        # hands off (24 joints)
+    return aa.cpu(), root.cpu()
 
 
 def iter_members(tar_path):
@@ -93,6 +96,7 @@ def main():
     ap.add_argument("--min_frames", type=int, default=30, help="drop clips shorter than this at 30fps")
     ap.add_argument("--limit", type=int, default=0)
     a = ap.parse_args()
+    torch.set_num_threads(2)          # several converters + 2 trainings share 8 cores: avoid intra-op thread thrash
     dev = torch.device(f"cuda:{a.gpu}")
     cfg = Config(project_root_dir=str(Path(__file__).resolve().parents[2]), device=a.gpu, mkdir=False)
     bm = ParametricModel(cfg.og_smpl_model_path, device=dev)
@@ -130,7 +134,7 @@ def main():
         for name, arr in iter_members(tp):
             if arr.ndim != 2 or arr.shape[1] != 272 or arr.shape[0] < a.min_frames or not np.isfinite(arr).all():
                 nbad += 1; continue
-            aa, root = recover_smpl(arr)
+            aa, root = recover_smpl(arr, dev)
             if not (torch.isfinite(aa).all() and torch.isfinite(root).all()):
                 nbad += 1; continue
             tran = root - J0
