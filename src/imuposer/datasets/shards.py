@@ -67,17 +67,16 @@ def pack_pt(pt_path, out_dir, verbose=True):
     F = int(sum(seq_lens))
     mm = {k: np.memmap(tmp / f"{k}.f32", dtype=np.float32, mode="w+", shape=(F,) + shp)
           for k, shp in FIELDS.items()}
-    b = 0
     t0 = time.time()
-    for i, L in enumerate(seq_lens):
-        if L == 0:
-            continue
-        mm["acc"][b:b + L] = d["acc"][i].reshape(L, -1, 3)[:, :5].float().numpy()
-        mm["ori"][b:b + L] = d["ori"][i].reshape(L, -1, 3, 3)[:, :5].float().numpy()
-        mm["pose_aa"][b:b + L] = _as_axis_angle(d["pose"][i], L).float().numpy()
-        mm["joint"][b:b + L] = d["joint"][i].reshape(L, -1, 3)[:, :24].float().numpy()
-        mm["tran"][b:b + L] = d["tran"][i].reshape(L, 3).float().numpy()
-        b += L
+    # batch across sequences: one big conversion/copy per field (per-sequence calls on files with
+    # thousands of short clips were dominated by per-call overhead: 30 s vs 6 s for a 3 h file)
+    keep = [i for i, L in enumerate(seq_lens) if L > 0]
+    mm["acc"][:] = torch.cat([d["acc"][i].reshape(seq_lens[i], -1, 3)[:, :5] for i in keep]).float().numpy()
+    mm["ori"][:] = torch.cat([d["ori"][i].reshape(seq_lens[i], -1, 3, 3)[:, :5] for i in keep]).float().numpy()
+    pose_all = torch.cat([d["pose"][i].reshape(seq_lens[i], -1) for i in keep])          # (F, 216|72)
+    mm["pose_aa"][:] = _as_axis_angle(pose_all, F).float().numpy()
+    mm["joint"][:] = torch.cat([d["joint"][i].reshape(seq_lens[i], -1, 3)[:, :24] for i in keep]).float().numpy()
+    mm["tran"][:] = torch.cat([d["tran"][i].reshape(seq_lens[i], 3) for i in keep]).float().numpy()
     for m in mm.values():
         m.flush()
     del mm
