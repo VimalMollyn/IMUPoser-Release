@@ -57,3 +57,10 @@ accel-consistency(hurts), physics-refine(neutral), translation(hurts), activity(
 - [ ] **LR / optimizer / weight-decay / cosine-sched sweeps** (LR, OPTIMIZER=adam/adamw/sgd/radam,
       WEIGHT_DECAY, LR_SCHED=cosine) — ready, env-only.
 - [ ] **bigger LSTM** (LSTM_HIDDEN 768/1024) — exp49/50 running.
+
+## NEW-DATA thread (2026-10-02, lw_rw_rp @25Hz, branch newdata) — see NEWDATA_RESULTS.md
+- [~] control (curated-12 + Nymeria) vs treatment (+ BONES-SEED + form-hoi + MotionMillion non-GV + Motion-X), 3 seeds each.
+- [ ] per-dataset ablations at 1 seed: control + BONES only / + form-hoi only / + MotionMillion only (attribute any effect).
+- [ ] compute-matched control on this mix (control x2.5 epochs) if the treatment wins.
+- [ ] BONES-SEED mirrored copies (+144 h) if BONES helps; MotionGV dose test (video-estimated, 114 GB) if MotionMillion helps.
+- [ ] Volta 16-mixed / torch.compile throughput test when GPU0 is idle (Pascal: 16-mixed 2x slower). Apply only to future, matched runs.
