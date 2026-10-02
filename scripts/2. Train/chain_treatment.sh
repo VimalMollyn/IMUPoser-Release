@@ -14,9 +14,10 @@ if [ "$CLOG" != "none" ]; then
   while ! grep -q "^\[.*\] DONE " "$CLOG" 2>/dev/null; do sleep 60; done
   log "control run done"
 fi
-while ! { grep -q "^DONE MM_PhantomDance" "$LOGS/motionmillion_convert.log" 2>/dev/null \
-       && grep -q "^DONE BONES" "$LOGS/bones_seed_convert.log" 2>/dev/null \
-       && grep -q "^DONE FORMHOI" "$LOGS/formhoi_convert.log" 2>/dev/null; }; do sleep 60; done
+mm_done(){ for s in finedance fit3d hi4d humansc3d interhuman interx trumans 100STYLE CombatMotion EgoBody fitness game_motion PhantomDance; do
+             grep -qh "^DONE MM_$s" "$LOGS"/motionmillion_convert*.log 2>/dev/null || return 1; done; }
+bones_done(){ for s in 0 1 2; do grep -q "^DONE BONES" "$LOGS/bones_seed_convert_s$s.log" 2>/dev/null || return 1; done; }
+while ! { mm_done && bones_done && grep -q "^DONE FORMHOI" "$LOGS/formhoi_convert.log" 2>/dev/null; }; do sleep 60; done
 log "conversions done; packing shards"
 NEW="$(ls /home/vimal/imuposer_data/processed_imuposer_25fps | grep -E '^(BONES_|FORMHOI_|MM_|MotionX_).*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
 NPROC=3 uv run python /home/vimal/.claude/jobs/a291a823/tmp/prepack.py "$NEW" > "$LOGS/prepack_new_$TAG.log" 2>&1

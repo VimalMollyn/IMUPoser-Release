@@ -135,13 +135,18 @@ def rest_positions(hier, scale=0.01):
     return P
 
 
-def iter_tar(tar_path, limit=0, skip_mirror=True):
-    n = 0
+def iter_tar(tar_path, limit=0, skip_mirror=True, shard=(0, 1)):
+    """Stream BVH members; with shard=(i,n) only every n-th original (k % n == i) is yielded, so several
+    processes can split the work (each still decompresses the whole tar, which is cheap next to FK)."""
+    n = 0; k = 0
     with tarfile.open(tar_path, "r:gz") as tf:
         for m in tf:
             if not m.isfile() or not m.name.endswith(".bvh"):
                 continue
             if skip_mirror and m.name.endswith("_M.bvh"):
+                continue
+            k += 1
+            if (k - 1) % shard[1] != shard[0]:
                 continue
             yield m.name, tf.extractfile(m).read()
             n += 1
@@ -157,7 +162,11 @@ def main():
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--tag", default="BONES")
     ap.add_argument("--min_frames", type=int, default=60, help="drop clips shorter than this at 120fps")
+    ap.add_argument("--shard", default="0/1", help="i/n: process every n-th original; output tag gets _s<i>")
     a = ap.parse_args()
+    si, sn = (int(x) for x in a.shard.split("/"))
+    if sn > 1:
+        a.tag = f"{a.tag}_s{si}"
     torch.set_num_threads(2)
     dev = torch.device(f"cuda:{a.gpu}")
     cfg = Config(project_root_dir=str(Path(__file__).resolve().parents[2]), device=a.gpu, mkdir=False)
@@ -210,7 +219,7 @@ def main():
                 yield pending.pop(0).get()
 
     with Pool(a.workers) as pool, torch.no_grad():
-        for name, hier, dt, data in pipelined_parse(pool, iter_tar(TAR, a.limit), window=8 * a.workers):
+        for name, hier, dt, data in pipelined_parse(pool, iter_tar(TAR, a.limit, shard=(si, sn)), window=8 * a.workers):
             if data.shape[0] < a.min_frames or not np.isfinite(data).all():
                 nskip += 1; continue
             if abs(1.0 / dt - SRC_FPS) > 1:
