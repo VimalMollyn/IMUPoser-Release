@@ -1,8 +1,10 @@
 import os
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from imuposer import math
 from imuposer.config import Config, amass_combos
+from imuposer.datasets.shards import ensure_packed, ShardStore, shard_root_for
 
 
 def _kmeans(x, k, iters=25, seed=0):
@@ -122,6 +124,15 @@ class GlobalModelDataset(Dataset):
         # IMUPOSER_FPS lets a 50Hz model use 250-frame windows; default 25 preserves the 125-frame window.
         window_length = int(self.config.max_sample_len * self.fps // 60)
 
+        # STREAMING (default): windows are sliced lazily out of memory-mapped shards on disk
+        # (see imuposer/datasets/shards.py) instead of being materialised in RAM. Same windowing,
+        # same samples; RAM stays flat however many hours of data are on disk. IMUPOSER_STREAM=0
+        # restores the original all-in-RAM lists (used to verify equivalence).
+        self.stream = os.environ.get("IMUPOSER_STREAM", "1") not in ("0", "", "false", "False")
+        if self.stream:
+            self._load_stream(data_files, window_length, need_act)
+            return
+
         for fname in data_files:
             fdata = torch.load(self.config.processed_imu_poser_25fps / fname, weights_only=False)
 
@@ -166,12 +177,61 @@ class GlobalModelDataset(Dataset):
             self.activity_labels = _kmeans(feats, K)
             self.n_activities = K
 
+    # ---- streaming backend -------------------------------------------------------------------
+    def _load_stream(self, data_files, window_length, need_act):
+        data_dir = self.config.processed_imu_poser_25fps
+        shard_root = shard_root_for(data_dir)
+        self.stores = []
+        starts, lens, sids = [], [], []
+        for fname in data_files:
+            sd = ensure_packed(data_dir / fname, shard_root)
+            st = ShardStore(sd)
+            sid = len(self.stores)
+            self.stores.append(st)
+            b = 0
+            for L in st.seq_lens:
+                # identical windowing to torch.split(seq, window_length): full windows + a shorter tail
+                for s in range(0, L, window_length):
+                    starts.append(b + s)
+                    lens.append(min(window_length, L - s))
+                    sids.append(sid)
+                b += L
+        self.win_start = np.asarray(starts, dtype=np.int64)
+        self.win_len = np.asarray(lens, dtype=np.int32)
+        self.win_store = np.asarray(sids, dtype=np.int32)
+        self.acc_windows = self.ori_windows = self.pose_windows = None
+        self.joint_windows = self.tran_windows = None
+        self.num_windows = len(starts)
+        self.num_combos = len(self.combos)
+        total_h = sum(st.n_frames for st in self.stores) / self.fps / 3600
+        print(f"[stream] {len(self.stores)} files, {self.num_windows} windows, {total_h:.1f} h @ {self.fps:g} fps "
+              f"(memmap shards in {shard_root})", flush=True)
+        if need_act:
+            K = int(os.environ.get("ACT_K", "16"))
+            feats = torch.stack([self._stream_window(i)[2].float().mean(0) for i in range(self.num_windows)])
+            self.activity_labels = _kmeans(feats, K)
+            self.n_activities = K
+
+    def _stream_window(self, window_idx):
+        """-> (acc (W,5,3) scaled, ori (W,5,3,3), pose (W,216) rotation matrices flattened, store, start, len)."""
+        st = self.stores[int(self.win_store[window_idx])]
+        s, L = int(self.win_start[window_idx]), int(self.win_len[window_idx])
+        acc = st.read("acc", s, L) / self.config.acc_scale
+        ori = st.read("ori", s, L)
+        aa = st.read("pose_aa", s, L)
+        pose = math.axis_angle_to_rotation_matrix(aa.reshape(-1, 3)).reshape(L, -1)
+        return acc, ori, pose, st, s, L
+
     def __getitem__(self, idx):
         window_idx = idx // self.num_combos
         combo = self.combos[idx % self.num_combos]
 
-        acc = self.acc_windows[window_idx]      # W, 5, 3
-        ori = self.ori_windows[window_idx]      # W, 5, 3, 3
+        if self.stream:
+            acc, ori, _pose_src, _st, _s, _L = self._stream_window(window_idx)
+        else:
+            acc = self.acc_windows[window_idx]      # W, 5, 3
+            ori = self.ori_windows[window_idx]      # W, 5, 3, 3
+            _pose_src = self.pose_windows[window_idx]
 
         # random global heading: rotate every sensor's global acc+ori (and, below, the root) by one
         # random world-yaw about up (Y). Computed once per window so the body stays rigid, only re-headed.
@@ -259,7 +319,7 @@ class GlobalModelDataset(Dataset):
 
         _input = torch.cat([_combo_acc.flatten(1), _combo_ori.flatten(1)], dim=1).float()
 
-        _pose = self.pose_windows[window_idx].float()
+        _pose = _pose_src.float()
         if _Yyaw is not None:
             # pose_windows are stored FLATTENED (W, 216); reshape to (W,24,3,3) to rotate ONLY the global
             # root orientation (joint 0). Joints 1-23 are parent-relative (local) and unchanged by a world
@@ -280,11 +340,11 @@ class GlobalModelDataset(Dataset):
             full_imu = torch.cat([acc.flatten(1), ori.flatten(1)], dim=1).float()
             _output = torch.cat([_output, full_imu], dim=1)
         elif aux == "joint":
-            jp = self.joint_windows[window_idx].float()        # W, 24, 3
+            jp = (_st.read("joint", _s, _L) if self.stream else self.joint_windows[window_idx]).float()  # W, 24, 3
             jp = (jp - jp[:, :1]).reshape(jp.shape[0], -1)      # root-relative, W, 72
             _output = torch.cat([_output, jp], dim=1)
         elif aux == "tran":
-            tr = self.tran_windows[window_idx].float()         # W, 3 (root translation)
+            tr = (_st.read("tran", _s, _L) if self.stream else self.tran_windows[window_idx]).float()  # W, 3 (root translation)
             # per-frame root VELOCITY (m/frame) — learnable from IMU (single-integrate accel), unlike
             # absolute position which has no global reference. TransPose-style translation target.
             vel = torch.zeros_like(tr)

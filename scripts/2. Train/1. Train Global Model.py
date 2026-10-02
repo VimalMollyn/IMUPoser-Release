@@ -114,8 +114,13 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
 # deterministic implementation, so deterministic=True raises at the first backward pass.
 # "warn" keeps the seeded run reproducible where possible and only warns on those ops.
 strategy = "ddp" if len(gpus) > 1 else "auto"
+# PRECISION: "32-true" (default, bit-identical to all earlier runs) or "16-mixed" (fp16 autocast + loss
+# scaling on the Volta/Pascal tensor cores). LIMIT_TRAIN_BATCHES: cap steps/epoch (benchmarking only).
+_precision = os.environ.get("PRECISION", "32-true")
+_limit_tb = os.environ.get("LIMIT_TRAIN_BATCHES")
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=max_epochs,
-                     accelerator="gpu", devices=gpus, strategy=strategy,
+                     accelerator="gpu", devices=gpus, strategy=strategy, precision=_precision,
+                     limit_train_batches=(int(_limit_tb) if _limit_tb else 1.0),
                      callbacks=[checkpoint_callback], deterministic="warn")
 
 # %%
