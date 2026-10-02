@@ -39,8 +39,10 @@ for spec in "$@"; do
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"
   dir="$OUT/base_$tag"; mkdir -p "$dir"
   if [ ! -f "$dir/best_model.txt" ]; then
+    # an interrupted base run (killed for a drive swap, crash, ...) resumes from its last epoch checkpoint
+    RESUME=""; [ -f "$dir/last.ckpt" ] && RESUME="$dir/last.ckpt" && echo "[$(date -Is)] resuming $tag from last.ckpt"
     env MODEL=AvatarPoserModel EPOCHS=60 TRAIN_COMBO=lw_rw_rp AUG_CALIB_RAD=0.12217 SEED="$seed" \
-        TRAIN_DATASETS="$DATA" VAL_FILES=dip_train.pt ${extra:-} \
+        TRAIN_DATASETS="$DATA" VAL_FILES=dip_train.pt ${extra:-} ${RESUME:+RESUME_FROM=$RESUME} \
         GPUS="$GPU" CHECKPOINT_DIR="$dir" WANDB_RUN_NAME="newdata_base_$tag" \
         uv run python "1. Train Global Model.py" --combo_id global --experiment newdata \
         > "$dir/train.log" 2>&1
