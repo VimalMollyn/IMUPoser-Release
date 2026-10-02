@@ -64,3 +64,4 @@ accel-consistency(hurts), physics-refine(neutral), translation(hurts), activity(
 - [ ] compute-matched control on this mix (control x2.5 epochs) if the treatment wins.
 - [ ] BONES-SEED mirrored copies (+144 h) if BONES helps; MotionGV dose test (video-estimated, 114 GB) if MotionMillion helps.
 - [ ] Volta 16-mixed / torch.compile throughput test when GPU0 is idle (Pascal: 16-mixed 2x slower). Apply only to future, matched runs.
+- [~] MODEL SCALE (user 2026-10-02 09:00): S=d256/L4/FF1024 (3.3M) vs M=d384/L6/FF1536 (~10.6M, 20-ep probe queued on GPU0 after treatment_gv_s1) vs L=d512/L8/FF2048 (~25M, only if M wins). Prior AMASS-only capacity tests were null at 31k windows; treatment has 585k.
