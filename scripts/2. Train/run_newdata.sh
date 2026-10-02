@@ -47,16 +47,19 @@ for spec in "$@"; do
   BEST="$(head -1 "$dir/best_model.txt" 2>/dev/null)"; [ -f "$BEST" ] || BEST="$dir/last.ckpt"
   echo "[$(date -Is)] base done: $BEST"
 
+  # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
+  # rebuild the model from env; the base-stage EPOCHS override must NOT (FT is always 60 ep)
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
   if [ ! -f "$ftdir/best_model.txt" ]; then
     env MODEL=AvatarPoserModel TF_LR=1e-4 EPOCHS=60 TRAIN_COMBO=lw_rw_rp SEED=1 \
-        TRAIN_DATASETS=ftrain VAL_FILES=fval.pt \
+        TRAIN_DATASETS=ftrain VAL_FILES=fval.pt $extra_model \
         GPUS="$GPU" CONTINUE_FROM="$BEST" CHECKPOINT_DIR="$ftdir" WANDB_RUN_NAME="newdata_ft_$tag" \
         uv run python "1. Train Global Model.py" --combo_id global --experiment newdata \
         > "$ftdir/train.log" 2>&1
   fi
   echo "[$(date -Is)] FT done, evaluating $tag on dip_test"
-  ( cd "$REPO" && CUDA_VISIBLE_DEVICES="$GPU" IMUPOSER_25FPS_DIR="$DD" \
+  ( cd "$REPO" && env $extra_model CUDA_VISIBLE_DEVICES="$GPU" IMUPOSER_25FPS_DIR="$DD" \
       uv run python "scripts/3. Evaluation/offline_fit.py" --data dip_test.pt --combo lw_rw_rp \
       --members "$ftdir/last.ckpt" --iters 0 --device 0 > "$ftdir/eval_dip_test.log" 2>&1 )
   grep -E "SIP" "$ftdir/eval_dip_test.log" | head -3
