@@ -20,7 +20,8 @@ REF_SIP = 17.32           # previous lw_rw_rp 25 Hz deliverable (curated-12 + Ny
 CURATED = "CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits".split(",")
 GROUPS = [("curated-12 AMASS", lambda n: n in CURATED), ("Nymeria", lambda n: n.startswith("Nymeria_")),
           ("BONES-SEED", lambda n: n.startswith("BONES_")), ("form-hoi", lambda n: n.startswith("FORMHOI_")),
-          ("MotionMillion (272-dim)", lambda n: n.startswith("MM_")), ("Motion-X (existing SMPL-X)", lambda n: n.startswith("MotionX_"))]
+          ("MotionMillion (272-dim)", lambda n: n.startswith("MM_")), ("Motion-X (existing SMPL-X)", lambda n: n.startswith("MotionX_")),
+          ("MotionGV (video-estimated, filtered)", lambda n: n.startswith("MGV_"))]
 
 
 # ---------------------------------------------------------------- parsing
@@ -114,14 +115,15 @@ def collect_runs():
 
 def data_hours():
     rows = []
+    shard_only = {d.name for d in SHARDS.iterdir() if (d / "meta.json").exists()} if SHARDS.exists() else set()
     for gname, pred in GROUPS:
-        names = sorted(p.stem for p in DATA.glob("*.pt") if pred(p.stem))
+        names = sorted({p.stem for p in DATA.glob("*.pt") if pred(p.stem)} | {n for n in shard_only if pred(n)})
         h, nseq, packed = 0.0, 0, 0
         for n in names:
             meta = SHARDS / n / "meta.json"
             if meta.exists():
                 m = json.loads(meta.read_text()); h += m["n_frames"] / 25 / 3600; nseq += m["n_seqs"]; packed += 1
-            else:
+            elif (DATA / f"{n}.pt").exists():
                 h += (DATA / f"{n}.pt").stat().st_size / 1452 / 25 / 3600      # bytes per 25fps frame in the .pt layout
         rows.append({"group": gname, "files": len(names), "hours": h, "seqs": nseq, "packed": packed})
     return rows
@@ -316,7 +318,7 @@ def build(out_path):
                      ("treatment", cols["treatment"], [(r["seed"], r["eval"]["sip"]) for r in trt if r["eval"]], tm)], ref=REF_SIP)
     # data table
     drows = "".join(f"<tr><td>{html.escape(r['group'])}</td><td class='num'>{r['files']}</td><td class='num'>{r['hours']:.1f}</td>"
-                    f"<td class='num'>{r['seqs'] or '–'}</td><td>{'control + treatment' if r['group'] in ('curated-12 AMASS','Nymeria') else 'treatment only'}</td></tr>" for r in rows)
+                    f"<td class='num'>{r['seqs'] or '–'}</td><td>{'control + treatment' if r['group'] in ('curated-12 AMASS','Nymeria') else ('treatment + MotionGV arm only' if r['group'].startswith('MotionGV') else 'treatment arms')}</td></tr>" for r in rows)
     ctrl_h = sum(r["hours"] for r in rows if r["group"] in ("curated-12 AMASS", "Nymeria")); all_h = sum(r["hours"] for r in rows)
     crow = "".join(f"<tr><td>{html.escape(c['name'])}</td><td class='num'>{c['hours']:.1f}</td><td>{len(c['done'])} subsets done</td><td class='mono'>{html.escape(c['last'][:90])}</td></tr>" for c in conv)
     # timeline
