@@ -48,7 +48,10 @@ config.aux_target = os.environ.get("AUX_TARGET")
 
 # Under DDP each rank uses `batch_size` and gradients are averaged across ranks,
 # so split the per-GPU batch to keep the EFFECTIVE batch size constant (=256).
-config.batch_size = config.batch_size // len(gpus)
+# BATCH_SIZE / ACCUM: micro-batch and gradient-accumulation steps (effective batch = BATCH_SIZE*ACCUM;
+# keep it 256 to match every other run). Lets a big model fit next to another job on the same GPU.
+config.batch_size = int(os.environ.get("BATCH_SIZE", config.batch_size)) // len(gpus)
+_accum = int(os.environ.get("ACCUM", "1"))
 
 # read the synthesized data from the external folder (override with IMUPOSER_DATA_DIR).
 # The canonical dataset-level split (config.val_datasets / config.test_datasets) is
@@ -120,7 +123,7 @@ _precision = os.environ.get("PRECISION", "32-true")
 _limit_tb = os.environ.get("LIMIT_TRAIN_BATCHES")
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=max_epochs,
                      accelerator="gpu", devices=gpus, strategy=strategy, precision=_precision,
-                     limit_train_batches=(int(_limit_tb) if _limit_tb else 1.0),
+                     limit_train_batches=(int(_limit_tb) if _limit_tb else 1.0), accumulate_grad_batches=_accum,
                      callbacks=[checkpoint_callback], deterministic="warn")
 
 # %%

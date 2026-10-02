@@ -30,6 +30,7 @@ GPU="${1:?gpu}"; shift
 for spec in "$@"; do
   IFS='|' read -r tag arm seed extra <<< "$spec"
   case "$arm" in
+    curated)   DATA="$CURATED" ;;
     control)   DATA="$CURATED,$NYM" ;;
     treatment) [ -n "$NEW" ] || { echo "no new-data files in $DD" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW" ;;
     treatment_gv) [ -n "$NEW" ] && [ -n "$GV" ] || { echo "missing new-data or MGV_ shards" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW,$GV" ;;

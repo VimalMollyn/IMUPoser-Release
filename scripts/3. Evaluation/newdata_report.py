@@ -95,10 +95,20 @@ def collect_runs():
     runs = []
     for d in sorted(CK.glob("base_*")):
         tag = d.name[5:]
-        arm = "control" if (tag.startswith("control") or tag.endswith("_ctrl")) else ("treatment+GV" if "_gv_" in tag else "treatment")
+        if tag.startswith("control") or tag.endswith("_ctrl"): arm = "control (267 h)"
+        elif tag.endswith("_cur"): arm = "curated-12 (35 h)"
+        elif "_gv_" in tag: arm = "treatment+GV"
+        elif tag.endswith("_trt") or tag.startswith("treatment"): arm = "treatment (676 h)"
+        else: arm = "treatment (676 h)"
+        if arm.startswith("control"): arm = "control"
+        if arm.startswith("treatment ("): arm = "treatment"
         seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
-        size = "L (25M)" if "_l" in tag.lower() and ("scale_l" in tag) else ("M (10.6M)" if ("scale_m" in tag or "_m20" in tag or "_m60" in tag) else "S (3.3M)")
-        budget = int(re.search(r"_(?:m|l|s)(\d+)_", tag + "_").group(1)) if re.search(r"_(?:m|l|s)(\d+)_", tag + "_") else 60
+        if "scale_xl" in tag: size = "XL (58M)"
+        elif "scale_l" in tag: size = "L (25M)"
+        elif "scale_m" in tag or "_m20" in tag or "_m60" in tag: size = "M (10.6M)"
+        else: size = "S (3.3M)"
+        _mb = re.search(r"_(?:xl|m|l|s)(\d+)_", tag + "_")
+        budget = int(_mb.group(1)) if _mb else 60
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
         ft = parse_train_log(CK / f"ft_{tag}" / "train.log")
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
