@@ -25,8 +25,14 @@ def get_split_files(config):
     Whole datasets are assigned to exactly one split; a dataset used for val/test
     is never in train. Test = held-out AMASS (config.test_datasets) + DIP-IMU.
     """
-    all_files = sorted(x.name for x in config.processed_imu_poser_25fps.iterdir()
-                       if x.name.endswith(".pt") and "dip" not in x.name)
+    all_files = set(x.name for x in config.processed_imu_poser_25fps.iterdir()
+                    if x.name.endswith(".pt") and "dip" not in x.name)
+    # shard-only datasets: packed into memmap shards and their .pt deleted to save disk (see shards.py)
+    from imuposer.datasets.shards import shard_root_for
+    _sr = shard_root_for(config.processed_imu_poser_25fps)
+    if _sr.exists():
+        all_files |= set(d.name + ".pt" for d in _sr.iterdir() if (d / "meta.json").exists() and "dip" not in d.name)
+    all_files = sorted(all_files)
     val_set, test_set = set(val_datasets), set(test_datasets)
 
     val_files = [f for f in all_files if f[:-len(".pt")] in val_set]

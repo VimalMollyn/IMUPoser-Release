@@ -21,6 +21,9 @@ mkdir -p "$OUT"
 CURATED="CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits"
 NYM="$(ls "$DD" | grep -E '^Nymeria_.*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
 NEW="$(ls "$DD" | grep -E '^(BONES_|FORMHOI_|MM_|MotionX_).*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
+# MotionGV (video-estimated MotionMillion) lives as shard-only datasets (no .pt): list its shard dirs
+SH="${IMUPOSER_SHARD_DIR:-$IMUPOSER_DATA_DIR/shards_processed_imuposer_25fps}"
+GV="$(ls "$SH" 2>/dev/null | grep -E '^MGV_' | grep -v '\.lock$\|\.packing$' | paste -sd, -)"
 [ -n "$NYM" ] || { echo "no Nymeria_*.pt in $DD" >&2; exit 1; }
 
 GPU="${1:?gpu}"; shift
@@ -29,6 +32,7 @@ for spec in "$@"; do
   case "$arm" in
     control)   DATA="$CURATED,$NYM" ;;
     treatment) [ -n "$NEW" ] || { echo "no new-data files in $DD" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW" ;;
+    treatment_gv) [ -n "$NEW" ] && [ -n "$GV" ] || { echo "missing new-data or MGV_ shards" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW,$GV" ;;
     *) echo "unknown arm $arm" >&2; exit 1 ;;
   esac
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"

@@ -95,6 +95,9 @@ def main():
     ap.add_argument("--chunk_hours", type=float, default=3.0, help="hours of 25fps motion per output .pt")
     ap.add_argument("--min_frames", type=int, default=30, help="drop clips shorter than this at 30fps")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--gv", action="store_true", help="convert the MotionGV folders (video-estimated mocap) as MGV_<folder>")
+    ap.add_argument("--pack_and_delete", action="store_true",
+                    help="after each tarball: pack its chunks into memmap shards and delete the .pt (disk-saving; the loader reads shard-only datasets)")
     a = ap.parse_args()
     torch.set_num_threads(2)          # several converters + 2 trainings share 8 cores: avoid intra-op thread thrash
     dev = torch.device(f"cuda:{a.gpu}")
@@ -106,15 +109,22 @@ def main():
         J0 = j0[0, 0].cpu()
     out25 = OUT / "processed_imuposer_25fps"; out25.mkdir(parents=True, exist_ok=True)
 
-    tars = sorted(p for p in MM.rglob("*.tar.gz") if "MotionGV" not in p.parts and p.stem.replace(".tar", "") not in SKIP)
+    if a.gv:
+        tars = sorted(p for p in MM.rglob("*.tar.gz") if "MotionGV" in p.parts and "Mirror" not in str(p))
+    else:
+        tars = sorted(p for p in MM.rglob("*.tar.gz") if "MotionGV" not in p.parts and p.stem.replace(".tar", "") not in SKIP)
     if a.subsets:
         keep = set(a.subsets.split(","))
         tars = [p for p in tars if p.name.replace(".tar.gz", "") in keep]
     print(f"{len(tars)} tarballs: {[p.name for p in tars]}", flush=True)
+    if a.pack_and_delete:
+        from imuposer.datasets.shards import ensure_packed, shard_root_for
 
     for tp in tars:
         sub = tp.name.replace(".tar.gz", "").replace("_seperate", "").replace("Datav1.1", "").replace("_smpl", "")
-        tag = f"MM_{sub}"
+        tag = f"{'MGV' if a.gv else 'MM'}_{sub}"
+        if a.pack_and_delete and sorted(shard_root_for(out25).glob(f"{tag}_*/meta.json")) and not (out25 / f"{tag}_000.pt").exists():
+            print(f"skip {tag} (shards exist)", flush=True); continue
         if (out25 / f"{tag}_000.pt").exists():
             print(f"skip {tag} (exists)", flush=True); continue
         t0 = time.time(); buf, hours, cid, nclips, nbad = [], 0.0, 0, 0, 0
@@ -145,6 +155,12 @@ def main():
                 flush()
             if a.limit and nclips >= a.limit: break
         flush()
+        if a.pack_and_delete:
+            root = shard_root_for(out25)
+            for p in sorted(out25.glob(f"{tag}_*.pt")):
+                ensure_packed(p, root, verbose=False)
+                p.unlink()
+            print(f"  packed {tag} chunks into {root} and removed the .pt files", flush=True)
         print(f"DONE {tag}: {nclips} clips ({nbad} skipped), {hours:.1f} h in {(time.time()-t0)/60:.1f} min", flush=True)
 
 

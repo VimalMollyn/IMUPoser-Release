@@ -106,8 +106,10 @@ class GlobalModelDataset(Dataset):
             data_files = ["dip_test.pt"]
 
         # silently skip any requested file that isn't present (e.g. dip_test.pt
-        # when DIP-IMU hasn't been regenerated yet)
-        data_files = [f for f in data_files if (self.config.processed_imu_poser_25fps / f).exists()]
+        # when DIP-IMU hasn't been regenerated yet); a shard-only dataset (packed, .pt deleted) counts as present
+        _sr = shard_root_for(self.config.processed_imu_poser_25fps)
+        data_files = [f for f in data_files
+                      if (self.config.processed_imu_poser_25fps / f).exists() or (_sr / f[:-3] / "meta.json").exists()]
 
         # base windows, stored once (combo masking happens lazily in __getitem__)
         acc_windows = []

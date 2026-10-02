@@ -123,6 +123,11 @@ def ensure_packed(pt_path, shard_root, verbose=True):
     """Return the shard dir for `pt_path`, packing it first if missing or stale."""
     pt_path, shard_root = Path(pt_path), Path(shard_root)
     out_dir = shard_root / pt_path.stem
+    if not pt_path.exists():
+        # shard-only dataset (the .pt was deleted after packing to save disk): use the shards as they are
+        if (out_dir / "meta.json").exists():
+            return out_dir
+        raise FileNotFoundError(f"{pt_path} missing and no shards at {out_dir}")
     if _meta_current(out_dir, pt_path) is not None:
         return out_dir
     shard_root.mkdir(parents=True, exist_ok=True)
