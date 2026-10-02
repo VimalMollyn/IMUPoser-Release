@@ -95,12 +95,15 @@ def collect_runs():
     runs = []
     for d in sorted(CK.glob("base_*")):
         tag = d.name[5:]
-        arm = "control" if tag.startswith("control") else "treatment"
-        seed = int(re.search(r"_s(\d+)", tag).group(1)) if re.search(r"_s(\d+)", tag) else 0
+        arm = "control" if (tag.startswith("control") or tag.endswith("_ctrl")) else ("treatment+GV" if "_gv_" in tag else "treatment")
+        seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
+        size = "L (25M)" if "_l" in tag.lower() and ("scale_l" in tag) else ("M (10.6M)" if ("scale_m" in tag or "_m20" in tag or "_m60" in tag) else "S (3.3M)")
+        budget = int(re.search(r"_(?:m|l|s)(\d+)_", tag + "_").group(1)) if re.search(r"_(?:m|l|s)(\d+)_", tag + "_") else 60
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
         ft = parse_train_log(CK / f"ft_{tag}" / "train.log")
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
-        runs.append({"tag": tag, "arm": arm, "seed": seed, "base": base, "ft": ft, "eval": ev, "times": run_times(tag)})
+        runs.append({"tag": tag, "arm": arm, "seed": seed, "base": base, "ft": ft, "eval": ev, "times": run_times(tag),
+                     "size": size, "budget": budget, "scale": tag.startswith("scale_") or "_m20" in tag or "_m60" in tag})
         # interim read-outs (fine-tune of a best-so-far checkpoint while the base was still training)
         for idir in sorted(CK.glob(f"ft_{tag}_interim_ep*")):
             ep = int(re.search(r"interim_ep(\d+)", idir.name).group(1))
@@ -264,7 +267,8 @@ def build(out_path):
     rows = data_hours()
     conv = conversion_status()
     now = datetime.now().strftime("%Y-%m-%d %H:%M %Z")
-    final = [r for r in runs if not r.get("interim")]
+    scale_runs = [r for r in runs if r.get("scale") and not r.get("interim")]
+    final = [r for r in runs if not r.get("interim") and not r.get("scale")]
     ctrl = [r for r in final if r["arm"] == "control"]; trt = [r for r in final if r["arm"] == "treatment"]
     interim = [r for r in runs if r.get("interim")]
     c_sip = [r["eval"]["sip"] for r in ctrl if r["eval"]]; t_sip = [r["eval"]["sip"] for r in trt if r["eval"]]
@@ -290,8 +294,20 @@ def build(out_path):
 
     # results table
     def fmt(v, nd=2): return "–" if v is None else f"{v:.{nd}f}"
+    # model-size section
+    s_ctrl = [r for r in ctrl if r["eval"] and r["size"].startswith("S")]
+    srows = []
+    for r in sorted(scale_runs, key=lambda r: (r["arm"], r["size"], r["budget"])) + [r for r in s_ctrl]:
+        b = r["base"]; e = r["eval"]; st = b.get("status", "pending")
+        chip = {"done": "ok", "running": "run", "error": "bad", "pending": "wait"}[st]
+        prog = f"{b.get('epochs_done',0)}/{r['budget']} ep" if st != "done" else f"done (best ep {b.get('best_epoch','?')}, val {fmt(b.get('best_val'),5)})"
+        srows.append(f"<tr><td>{r['size']}</td><td>{r['arm']}</td><td class='num'>{r['budget']}</td><td><span class='chip {chip}'>{st}</span> {html.escape(prog)}</td>"
+                     f"<td class='num'>{fmt(e and e['sip'])}</td><td class='num'>{fmt(e and e['mpjre'])}</td><td class='num'>{fmt(e and e['mpjpe'])}</td></tr>")
+    sbars = svg_bars([(f"{r['size']} · {r['arm']} · {r['budget']} ep", "#2f9e7a" if r["size"].startswith("M") else ("#8e6ad1" if r["size"].startswith("L") else "#5b6ee1"),
+                       [(r["seed"], r["eval"]["sip"])], None)
+                      for r in sorted(scale_runs + s_ctrl, key=lambda r: (r["budget"], r["size"])) if r["eval"]], ref=None)
     trows = []
-    for r in sorted(runs, key=lambda r: (r["arm"], r["seed"], bool(r.get("interim")))):
+    for r in sorted(final + interim, key=lambda r: (r["arm"], r["seed"], bool(r.get("interim")))):
         b = r["base"]; e = r["eval"]
         st = b.get("status", "pending")
         if r.get("interim"):
@@ -360,6 +376,11 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <div class="tablewrap"><table><thead><tr><th>arm</th><th>seed</th><th>pretrain data</th><th>base (60 ep)</th><th>DIP FT</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{''.join(trows)}</tbody></table></div>
 <div class="grid2"><div><h3>dip_test SIP per seed</h3>{bars}</div><div><h3>Validation loss during pretraining</h3>{curve}<div class="legend">{legend}</div></div></div>
 <p class="muted">SIP = mean angular error of hips and shoulders (the standard sparse-IMU metric). The reference line is the 2026-09-01 deliverable (same recipe, original 25 fps Nymeria files, in-RAM loader). Validation loss is on real DIP training subjects and selects the base checkpoint; it is not the test metric.</p>
+
+<h2>Does a bigger model help? (control recipe, fixed 20-epoch budget)</h2>
+<p>Asked at 09:00. Same data (curated-12 + Nymeria), same schedule and augmentation, same DIP fine-tune; only the transformer size changes. The 20-epoch budget makes each probe a few hours; the S model's 60-epoch result is the reference for what the full schedule adds.</p>
+<div class="grid2"><div class="tablewrap"><table><thead><tr><th>model</th><th>data</th><th class="num">epochs</th><th>base</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{''.join(srows)}</tbody></table>
+<p class="muted">S = d256, 4 layers, FF 1024 (3.3 M params). M = d384, 6 layers, FF 1536 (10.6 M). L = d512, 8 layers, FF 2048 (25 M). All at lr 3e-4, batch 256, dropout 0.1.</p></div><div>{sbars}</div></div>
 
 <h2>What was trained on</h2>
 {svg_stack(rows)}
