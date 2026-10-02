@@ -100,6 +100,15 @@ def collect_runs():
         ft = parse_train_log(CK / f"ft_{tag}" / "train.log")
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
         runs.append({"tag": tag, "arm": arm, "seed": seed, "base": base, "ft": ft, "eval": ev, "times": run_times(tag)})
+        # interim read-outs (fine-tune of a best-so-far checkpoint while the base was still training)
+        for idir in sorted(CK.glob(f"ft_{tag}_interim_ep*")):
+            ep = int(re.search(r"interim_ep(\d+)", idir.name).group(1))
+            iev = parse_eval(idir / "eval_dip_test.log")
+            if iev:
+                runs.append({"tag": f"{tag} (interim, base ep {ep})", "arm": arm, "seed": seed, "interim": True,
+                             "base": {"status": "done", "val": {}, "epochs_done": ep + 1, "hours": base.get("hours"), "train_files": base.get("train_files"),
+                                      "best_epoch": ep, "best_val": base["val"].get(ep)},
+                             "ft": parse_train_log(idir / "train.log"), "eval": iev, "times": {}})
     return runs
 
 
@@ -253,7 +262,9 @@ def build(out_path):
     rows = data_hours()
     conv = conversion_status()
     now = datetime.now().strftime("%Y-%m-%d %H:%M %Z")
-    ctrl = [r for r in runs if r["arm"] == "control"]; trt = [r for r in runs if r["arm"] == "treatment"]
+    final = [r for r in runs if not r.get("interim")]
+    ctrl = [r for r in final if r["arm"] == "control"]; trt = [r for r in final if r["arm"] == "treatment"]
+    interim = [r for r in runs if r.get("interim")]
     c_sip = [r["eval"]["sip"] for r in ctrl if r["eval"]]; t_sip = [r["eval"]["sip"] for r in trt if r["eval"]]
     cm, tm = mean(c_sip), mean(t_sip)
     p = welch(c_sip, t_sip)
@@ -267,15 +278,25 @@ def build(out_path):
     elif cm is not None:
         head = f"Control arm so far: dip_test SIP {cm:.2f} ({len(c_sip)} seed{'s' if len(c_sip)>1 else ''}). Treatment arm still training."
         sub = "The treatment number lands when its 60-epoch base run plus DIP fine-tune finishes; this page is regenerated then."
+        if interim:
+            r = interim[-1]
+            head = f"Interim: treatment {r['eval']['sip']:.2f} vs control {cm:.2f} dip_test SIP (treatment read out at base epoch {r['base']['best_epoch']} of 60, not final)."
+            sub = ("An interim checkpoint is not a finished run, but the direction matches the WHIP lesson: lower validation loss "
+                   "on DIP-train windows while dip_test gets worse. Final treatment numbers replace this when the runs finish.")
     else:
         head = "Both arms are still training."; sub = "Results appear here as each seed's fine-tune and dip_test evaluation complete."
 
     # results table
     def fmt(v, nd=2): return "–" if v is None else f"{v:.{nd}f}"
     trows = []
-    for r in sorted(runs, key=lambda r: (r["arm"], r["seed"])):
+    for r in sorted(runs, key=lambda r: (r["arm"], r["seed"], bool(r.get("interim")))):
         b = r["base"]; e = r["eval"]
         st = b.get("status", "pending")
+        if r.get("interim"):
+            trows.append(f"<tr class='interim'><td>{r['arm']} <span class='chip wait'>interim</span></td><td>s{r['seed']}</td><td>{fmt(b.get('hours'),0)} h</td>"
+                         f"<td>read-out at base epoch {b.get('best_epoch')} (val {fmt(b.get('best_val'),5)})</td><td>done</td>"
+                         f"<td class='num'>{fmt(e['sip'])}</td><td class='num'>{fmt(e['mpjre'])}</td><td class='num'>{fmt(e['mpjpe'])}</td></tr>")
+            continue
         prog = f"{b.get('epochs_done',0)}/60 ep" + (f" @ {b['it_s']:.1f} it/s" if b.get("it_s") else "")
         if st == "done": prog = f"done (best ep {b.get('best_epoch','?')}, val {fmt(b.get('best_val'),5)})"
         ftst = "–" if r["ft"] is None else ("done" if r["ft"]["status"] == "done" else r["ft"]["status"])
@@ -286,7 +307,7 @@ def build(out_path):
     # curves
     cols = {"control": "#5b6ee1", "treatment": "#d98f3b"}
     series = []
-    for r in sorted(runs, key=lambda r: (r["arm"], r["seed"])):
+    for r in sorted(final, key=lambda r: (r["arm"], r["seed"])):
         pts = sorted(r["base"]["val"].items())
         series.append((f"{r['arm']} s{r['seed']}", cols[r["arm"]], r["seed"] != 1, pts))
     curve = svg_lines(series)
@@ -300,7 +321,7 @@ def build(out_path):
     crow = "".join(f"<tr><td>{html.escape(c['name'])}</td><td class='num'>{c['hours']:.1f}</td><td>{len(c['done'])} subsets done</td><td class='mono'>{html.escape(c['last'][:90])}</td></tr>" for c in conv)
     # timeline
     tl = []
-    for r in sorted(runs, key=lambda r: (r["arm"], r["seed"])):
+    for r in sorted(final, key=lambda r: (r["arm"], r["seed"])):
         t = r["times"]
         tl.append(f"<li><b>{r['arm']} s{r['seed']}</b>: start {t.get('start','–')[11:16] if t.get('start') else '–'}, base done {t.get('base_done','–')[11:16] if t.get('base_done') else '–'}, eval done {t.get('done','–')[11:16] if t.get('done') else '–'}</li>")
 
@@ -358,6 +379,17 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <div class="panel"><h3 style="margin-top:0">MotionMillion (272-dim)</h3><p>The MotionStreamer representation stores 22 local joint rotations as 6D plus heading-free root velocity and height. Recovery is closed-form (undo the accumulated heading on the root, integrate xz velocity, take the root height), no IK. Their world is already y-up. MotionGV (video-estimated, 114 GB) is excluded for now; the seven Motion-X subsets already in the pipeline are reused from the SMPL-X originals.</p>
 <h3>IMU synthesis without the mesh</h3><p>Only the six sensor vertices are skinned (exact linear blend skinning with their own weights), which reproduces the full 6890-vertex mesh to 1e-4 relative and runs 70× faster. Validated against the full mesh on CMU and BMLmovi.</p></div>
 </div>
+<h3>Data quality of the sources (25 fps, sensors 1 to 5)</h3>
+<div class="tablewrap"><table><thead><tr><th>source</th><th>mean clip</th><th class="num">|acc| mean m/s²</th><th class="num">|acc| p95</th><th class="num">frames &gt;50 m/s²</th><th class="num">joint jerk median</th><th class="num">jerk p95</th></tr></thead><tbody>
+<tr><td>MotionGV folder9 sample (video-estimated, raw)</td><td>2.6 s</td><td class="num">20.2</td><td class="num">37.2</td><td class="num">4.0 %</td><td class="num">100</td><td class="num">1145</td></tr>
+<tr><td>MotionMillion finedance (mocap)</td><td>4.0 s</td><td class="num">10.2</td><td class="num">18.4</td><td class="num">1.3 %</td><td class="num">68</td><td class="num">273</td></tr>
+<tr><td>MotionMillion interx (mocap)</td><td>6.1 s</td><td class="num">6.5</td><td class="num">6.9</td><td class="num">1.1 %</td><td class="num">29</td><td class="num">161</td></tr>
+<tr><td>BONES-SEED</td><td>6.9 s</td><td class="num">3.1</td><td class="num">11.0</td><td class="num">0.01 %</td><td class="num">42</td><td class="num">285</td></tr>
+<tr><td>form-hoi</td><td>15.8 s</td><td class="num">5.9</td><td class="num">2.8</td><td class="num">1.1 %</td><td class="num">31</td><td class="num">86</td></tr>
+<tr><td>Nymeria</td><td>15 min</td><td class="num">1.0</td><td class="num">2.7</td><td class="num">0.07 %</td><td class="num">42</td><td class="num">89</td></tr>
+<tr><td>CMU (AMASS)</td><td>15.9 s</td><td class="num">2.5</td><td class="num">8.8</td><td class="num">0.02 %</td><td class="num">38</td><td class="num">174</td></tr>
+</tbody></table></div>
+<p class="muted">Jerk is the third difference of joint positions (m/s³, median over frames and joints). Raw MotionGV is 4 to 10× jitterier than any mocap source, its clips are short (median 1.3 s, 35 % under one second) and 4 % of its frames carry accelerations above 50 m/s², so it is converted with a 5-frame moving average at 30 fps and a 2 s minimum clip length before synthesis (see the MotionGV arm).</p>
 
 <h2>Timeline</h2>
 <ul>{''.join(tl)}</ul>

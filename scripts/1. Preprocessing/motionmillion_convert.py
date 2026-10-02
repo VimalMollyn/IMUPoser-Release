@@ -96,6 +96,12 @@ def main():
     ap.add_argument("--min_frames", type=int, default=30, help="drop clips shorter than this at 30fps")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--gv", action="store_true", help="convert the MotionGV folders (video-estimated mocap) as MGV_<folder>")
+    ap.add_argument("--smooth", type=int, default=0,
+                    help="odd window of a moving average applied to the raw 272-dim features at 30 fps before recovery "
+                         "(video-estimated MotionGV is 4-10x jitterier than mocap; 5 brings its jerk/accel in line)")
+    ap.add_argument("--max_acc", type=float, default=0.0,
+                    help="drop a clip whose synthesized sensor |acc| (60 fps) exceeds this anywhere (m/s^2; 0 = off). "
+                         "Guards against residual video-tracking spikes in MotionGV")
     ap.add_argument("--pack_and_delete", action="store_true",
                     help="after each tarball: pack its chunks into memmap shards and delete the .pt (disk-saving; the loader reads shard-only datasets)")
     a = ap.parse_args()
@@ -131,9 +137,15 @@ def main():
         chunk_frames = a.chunk_hours * 3600 * 60
 
         def flush():
-            nonlocal buf, cid, hours
+            nonlocal buf, cid, hours, nbad
             if not buf: return
             out = synthesize_sequences(buf, bm, dev)
+            if a.max_acc > 0:
+                keep = [i for i, v in enumerate(out["vacc"]) if float(v[:, :5].norm(dim=-1).max()) <= a.max_acc]
+                nbad += len(out["vacc"]) - len(keep)
+                out = {k: [v[i] for i in keep] for k, v in out.items()}
+                if not out["pose"]:
+                    buf = []; return
             fdata = amass_dir_to_25fps(out)
             p = out25 / f"{tag}_{cid:03d}.pt"
             torch.save(fdata, p.with_suffix(".pt.tmp")); os.replace(p.with_suffix(".pt.tmp"), p)
@@ -144,6 +156,12 @@ def main():
         for name, arr in iter_members(tp):
             if arr.ndim != 2 or arr.shape[1] != 272 or arr.shape[0] < a.min_frames or not np.isfinite(arr).all():
                 nbad += 1; continue
+            if a.smooth > 1:
+                # centred moving average along time (edge-padded); 6D rotations are re-orthonormalised in recover_smpl
+                k = a.smooth; pad = k // 2
+                ap_ = np.pad(arr, ((pad, pad), (0, 0)), mode="edge")
+                cs = np.cumsum(ap_, axis=0, dtype=np.float64); cs = np.vstack([np.zeros((1, 272)), cs])
+                arr = ((cs[k:] - cs[:-k]) / k).astype(np.float32)
             aa, root = recover_smpl(arr, dev)
             if not (torch.isfinite(aa).all() and torch.isfinite(root).all()):
                 nbad += 1; continue
