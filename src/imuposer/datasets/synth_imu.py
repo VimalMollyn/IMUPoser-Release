@@ -45,6 +45,41 @@ def resample_linear(arr, src_fps, dst_fps):
     return torch.from_numpy(out) if is_t else out
 
 
+def _project_so3(Rm):
+    """Project (...,3,3) near-rotations onto SO(3) by Gram-Schmidt on the first two columns."""
+    c1, c2 = Rm[..., :, 0], Rm[..., :, 1]
+    b1 = c1 / c1.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+    c2 = c2 - (b1 * c2).sum(-1, keepdim=True) * b1
+    b2 = c2 / c2.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack([b1, b2, b3], dim=-1)
+
+
+def resample_pose_aa(aa, src_fps, dst_fps):
+    """Resample an axis-angle pose sequence (T,J,3) by interpolating ROTATION MATRICES (then projecting back
+    onto SO(3)) instead of axis-angle vectors.
+
+    WHY: linear interpolation of axis-angle is wrong whenever consecutive frames straddle the +-pi wrap
+    (the representation flips by ~2 pi): the interpolated vector collapses toward the identity, the limb
+    snaps to rest for one frame, and the 2nd-difference accel explodes (1.7-10.8 % of frames above 50 m/s^2
+    in form-hoi / MotionMillion, max in the thousands, vs 0.00 % for the stride-decimated BONES-SEED).
+    Matrix interpolation + projection has no such discontinuity (for the 2x upsample it is the midpoint
+    rotation to within 1e-4)."""
+    is_t = torch.is_tensor(aa)
+    a = aa if is_t else torch.from_numpy(np.asarray(aa))
+    T, J = a.shape[0], a.shape[1]
+    R = M.axis_angle_to_rotation_matrix(a.reshape(-1, 3).float()).view(T, J, 3, 3)
+    idx = np.arange(0, T, src_fps / dst_fps)
+    idx = idx[idx <= T - 1 + 1e-9]
+    lo = torch.from_numpy(np.floor(idx).astype(np.int64))
+    hi = torch.from_numpy(np.minimum(np.ceil(idx).astype(np.int64), T - 1))
+    w = torch.from_numpy((idx - np.floor(idx)).astype(np.float32)).view(-1, 1, 1, 1)
+    Rm = R[lo] * (1 - w) + R[hi] * w
+    Rp = _project_so3(Rm)
+    out = M.rotation_matrix_to_axis_angle(Rp.reshape(-1, 3, 3)).view(-1, J, 3)
+    return out if is_t else out.numpy()
+
+
 def zup_to_dip(pose_aa, tran):
     """Rotate a z-up SMPL sequence (AMASS convention) into DIP's y-up frame. In place on copies."""
     pose_aa = pose_aa.clone(); tran = tran.clone()
@@ -142,7 +177,8 @@ def amass_dir_to_25fps(out, target_fps=25):
     """`out` is the dict returned by synthesize_sequences (or loaded from an AMASS-style folder)."""
     fdata = {
         "joint": [_resample60(x, target_fps) for x in out["joint"]],
-        "pose": [M.axis_angle_to_rotation_matrix(_resample60(x, target_fps).reshape(-1, 3).contiguous()).view(-1, 24, 3, 3)
+        # pose targets: interpolate rotations in matrix space (see resample_pose_aa), not axis-angle
+        "pose": [M.axis_angle_to_rotation_matrix(resample_pose_aa(x, 60.0, float(target_fps)).reshape(-1, 3).contiguous()).view(-1, 24, 3, 3)
                  for x in out["pose"]],
         "shape": out["shape"],
         "tran": [_resample60(x, target_fps) for x in out["tran"]],

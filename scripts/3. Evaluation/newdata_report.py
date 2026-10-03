@@ -20,6 +20,12 @@ DATA = Path("/home/vimal/imuposer_data/processed_imuposer_25fps")
 SHARDS = Path("/home/vimal/imuposer_data/shards_processed_imuposer_25fps")
 PARAM_CACHE = CK / "_params_cache.json"
 PREV_DELIVERABLE = 17.32       # lw_rw_rp 25 Hz, 2026-09-01 (curated-12 + Nymeria -> DIP FT, in-RAM loader)
+# Runs trained on the first conversion of form-hoi / MotionMillion / MotionGV, which upsampled 30 -> 60 fps by
+# linearly interpolating AXIS-ANGLE poses: across the +-pi wrap that collapses a limb to rest for one frame and
+# the synthetic accel explodes (1.7-10.8 % of frames > 50 m/s^2). Fixed 2026-10-03 16:40 (matrix-space interp);
+# these results are kept for the record but excluded from every chart and the leaderboard.
+INVALID = {"treatment_s1": "pre-fix data", "treatment_s2": "pre-fix data", "scale_s20_trt": "pre-fix data",
+           "scale_m20_trt": "pre-fix data", "abl_formhoi_s20": "pre-fix data"}
 NOISE = 0.17                   # seed-to-seed std of dip_test SIP on this recipe (Nymeria study, n=4)
 CURATED = "CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits".split(",")
 GROUPS = [("curated-12 AMASS", lambda n: n in CURATED), ("Nymeria", lambda n: n.startswith("Nymeria_")),
@@ -315,7 +321,9 @@ def row_status(r):
 
 
 def build(out_path):
-    runs = collect_runs()
+    runs_all = collect_runs()
+    invalid = [r for r in runs_all if r["tag"].split(" ")[0] in INVALID]
+    runs = [r for r in runs_all if r["tag"].split(" ")[0] not in INVALID]
     rows = data_hours()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     fin = [r for r in runs if r["eval"] and not r.get("interim")]
@@ -451,6 +459,12 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <div class="panel"><h3 style="margin-top:0">Protocol</h3><dl><dt>pretrain</dt><dd>AvatarPoser transformer, 125-frame windows, lw_rw_rp specialist, calibration-error augmentation 0.122 rad, select on dip_train loss</dd><dt>fine-tune</dt><dd>real DIP ftrain (32 seqs), 60 ep, lr 1e-4, select on fval (9 seqs)</dd><dt>test</dt><dd>dip_test s09/s10, last fine-tuned checkpoint</dd><dt>loader</dt><dd>streaming memory-mapped shards (verified identical to the in-RAM loader); RAM flat at any data size</dd><dt>precision</dt><dd>fp32 everywhere (16-mixed: 2× slower on Pascal, +6 % on Volta)</dd></dl></div>
 <div class="panel"><h3 style="margin-top:0">Converting SOMA and 272-dim motion to SMPL IMU</h3><p>SOMA-rig data (BONES-SEED BVH, form-hoi params) is retargeted closed-form: each SMPL joint copies its SOMA counterpart's global rotation with a per-joint offset calibrated from the two T-pose meshes (SOMA-X topology bridge + Kabsch). Posed per-part error 1–3° on thighs, head, pelvis and 6–10° on forearms, better than SOMA-X's own mesh fit and ~5000× faster. MotionMillion's 272-dim representation is inverted in closed form (no IK). IMU is synthesized by skinning only the six sensor vertices (exact to 1e-4 vs the full mesh, 70× faster). Mixed precision was not adopted; the real speedups were vectorizing a per-element rotation conversion (45–750×) and the mesh-free synthesis.</p></div>
 </div>
+
+<h2>Invalidated runs (first conversion of the new data)</h2>
+<p>The first conversion of form-hoi, MotionMillion and MotionGV upsampled 30 to 60 fps by linearly interpolating axis-angle poses. Across the ±π wrap that collapses a limb to rest for one frame and the second-difference accelerometer explodes: 1.7 to 10.8 percent of frames above 50 m/s² with peaks in the thousands, against 0.00 percent for BONES-SEED (stride-decimated) and 0.13 percent for Nymeria. Rotations are now interpolated in matrix space and the affected datasets re-converted; every arm that used them is rerun. The numbers below are kept for the record only.</p>
+<div class="tablewrap"><table><thead><tr><th>run</th><th>model</th><th>data</th><th class="num">SIP °</th><th>why invalid</th></tr></thead><tbody>
+{''.join(f"<tr><td>{html.escape(r['tag'])}</td><td>{r['size']}</td><td>{r['arm']} {html.escape(r['extra'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td>{INVALID[r['tag'].split(' ')[0]]}</td></tr>" for r in invalid)}
+</tbody></table></div>
 
 <h2>Timeline</h2>
 <ul>{tl}</ul>

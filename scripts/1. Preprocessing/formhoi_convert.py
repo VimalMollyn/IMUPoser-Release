@@ -18,7 +18,7 @@ import torch
 
 from imuposer.config import Config
 from imuposer.smpl.parametricModel import ParametricModel
-from imuposer.datasets.synth_imu import synthesize_sequences, amass_dir_to_25fps, resample_linear
+from imuposer.datasets.synth_imu import synthesize_sequences, amass_dir_to_25fps, resample_linear, resample_pose_aa
 from imuposer.datasets.soma_retarget import SMPLSkeleton, SOMAtoSMPL, align_rotation, soma_x_reference, mesh_calibrated_offsets
 
 ROOT = Path(os.environ.get("FORMHOI_DIR", "/home/vimal/Downloads/form-hoi/data"))
@@ -122,7 +122,7 @@ def main():
                 valid &= torch.isfinite(aa).all(-1).all(-1).cpu().numpy() & torch.isfinite(trn).all(-1).cpu().numpy()
                 cut += int((~valid).sum())
                 for s, e in segments(valid, int(2 * SRC_FPS)):
-                    aa60 = resample_linear(aa[s:e].cpu(), SRC_FPS, 60.0); tr60 = resample_linear(trn[s:e].cpu(), SRC_FPS, 60.0)
+                    aa60 = resample_pose_aa(aa[s:e].cpu(), SRC_FPS, 60.0); tr60 = resample_linear(trn[s:e].cpu(), SRC_FPS, 60.0)   # rotations: matrix-space interp
                     buf.append((aa60, tr60, torch.zeros(10))); nseg += 1
                 if sum(x[0].shape[0] for x in buf) >= chunk_frames:
                     flush()

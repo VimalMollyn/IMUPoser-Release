@@ -29,7 +29,7 @@ import torch
 from imuposer.config import Config
 from imuposer.smpl.parametricModel import ParametricModel
 from imuposer import math as M
-from imuposer.datasets.synth_imu import synthesize_sequences, amass_dir_to_25fps, resample_linear
+from imuposer.datasets.synth_imu import synthesize_sequences, amass_dir_to_25fps, resample_linear, resample_pose_aa
 
 MM = Path(os.environ.get("MOTIONMILLION_DIR", "/home/vimal/Downloads/MotionMillion/motion_272rpr"))
 OUT = Path(os.environ.get("IMUPOSER_OUT_DIR", "/home/vimal/imuposer_data"))
@@ -167,7 +167,7 @@ def main():
             if not (torch.isfinite(aa).all() and torch.isfinite(root).all()):
                 nbad += 1; continue
             tran = root - J0
-            aa60 = resample_linear(aa, SRC_FPS, 60.0); tran60 = resample_linear(tran, SRC_FPS, 60.0)
+            aa60 = resample_pose_aa(aa, SRC_FPS, 60.0); tran60 = resample_linear(tran, SRC_FPS, 60.0)   # rotations: matrix-space interp
             buf.append((aa60, tran60, torch.zeros(10)))
             nclips += 1
             if sum(x[0].shape[0] for x in buf) >= chunk_frames:
