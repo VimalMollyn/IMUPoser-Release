@@ -69,9 +69,10 @@ def resample_pose_aa(aa, src_fps, dst_fps):
     a = aa if is_t else torch.from_numpy(np.asarray(aa))
     T, J = a.shape[0], a.shape[1]
     R = M.axis_angle_to_rotation_matrix(a.reshape(-1, 3).float()).view(T, J, 3, 3)
-    idx = np.arange(0, T, src_fps / dst_fps)
-    idx = idx[idx <= T - 1 + 1e-9]
-    lo = torch.from_numpy(np.floor(idx).astype(np.int64))
+    # same index grid as _resample60 / resample_linear (torch.arange(0, T, step) with the end index clamped),
+    # so every field of a sequence keeps the same number of frames
+    idx = torch.arange(0, T, src_fps / dst_fps).numpy()
+    lo = torch.from_numpy(np.minimum(np.floor(idx).astype(np.int64), T - 1))
     hi = torch.from_numpy(np.minimum(np.ceil(idx).astype(np.int64), T - 1))
     w = torch.from_numpy((idx - np.floor(idx)).astype(np.float32)).view(-1, 1, 1, 1)
     Rm = R[lo] * (1 - w) + R[hi] * w
