@@ -74,7 +74,7 @@ def main():
         nonlocal buf, cid, hours
         if not buf: return
         out = synthesize_sequences(buf, bm, dev)
-        fdata = amass_dir_to_25fps(out)
+        fdata = amass_dir_to_25fps(out, device=dev)
         p = out25 / f"{a.tag}_{cid:03d}.pt"
         torch.save(fdata, p.with_suffix(".pt.tmp")); os.replace(p.with_suffix(".pt.tmp"), p)
         h = sum(x.shape[0] for x in fdata["pose"]) / 25 / 3600; hours += h
@@ -122,7 +122,7 @@ def main():
                 valid &= torch.isfinite(aa).all(-1).all(-1).cpu().numpy() & torch.isfinite(trn).all(-1).cpu().numpy()
                 cut += int((~valid).sum())
                 for s, e in segments(valid, int(2 * SRC_FPS)):
-                    aa60 = resample_pose_aa(aa[s:e].cpu(), SRC_FPS, 60.0); tr60 = resample_linear(trn[s:e].cpu(), SRC_FPS, 60.0)   # rotations: matrix-space interp
+                    aa60 = resample_pose_aa(aa[s:e], SRC_FPS, 60.0).cpu(); tr60 = resample_linear(trn[s:e].cpu(), SRC_FPS, 60.0)   # rotations: matrix-space interp (GPU)
                     buf.append((aa60, tr60, torch.zeros(10))); nseg += 1
                 if sum(x[0].shape[0] for x in buf) >= chunk_frames:
                     flush()

@@ -192,7 +192,7 @@ def main():
     def flush():
         nonlocal buf, cid, hours
         if not buf["pose"]: return
-        fdata = amass_dir_to_25fps(buf)
+        fdata = amass_dir_to_25fps(buf, device=dev)
         p = out25 / f"{a.tag}_{cid:03d}.pt"
         torch.save(fdata, p.with_suffix(".pt.tmp")); os.replace(p.with_suffix(".pt.tmp"), p)
         h = sum(x.shape[0] for x in fdata["pose"]) / 25 / 3600; hours += h

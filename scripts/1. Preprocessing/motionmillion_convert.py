@@ -73,7 +73,7 @@ def recover_smpl(x, dev=None):
     root[:, 1] = x[:, 8 + 1]                                                              # root height
     aa = M.rotation_matrix_to_axis_angle(rot.reshape(-1, 3, 3)).view(T, NJ, 3)
     aa = torch.cat([aa, torch.zeros(T, 2, 3, device=x.device)], 1)                        # hands off (24 joints)
-    return aa.cpu(), root.cpu()
+    return aa, root.cpu()                                                                 # aa stays on `dev` for the GPU resample
 
 
 def iter_members(tar_path):
@@ -147,7 +147,7 @@ def main():
                 out = {k: [v[i] for i in keep] for k, v in out.items()}
                 if not out["pose"]:
                     buf = []; return
-            fdata = amass_dir_to_25fps(out)
+            fdata = amass_dir_to_25fps(out, device=dev)
             p = out25 / f"{tag}_{cid:03d}.pt"
             torch.save(fdata, p.with_suffix(".pt.tmp")); os.replace(p.with_suffix(".pt.tmp"), p)
             h = sum(x.shape[0] for x in fdata["pose"]) / 25 / 3600; hours += h
@@ -166,8 +166,8 @@ def main():
             aa, root = recover_smpl(arr, dev)
             if not (torch.isfinite(aa).all() and torch.isfinite(root).all()):
                 nbad += 1; continue
-            tran = root - J0
-            aa60 = resample_pose_aa(aa, SRC_FPS, 60.0); tran60 = resample_linear(tran, SRC_FPS, 60.0)   # rotations: matrix-space interp
+            tran = root - J0.cpu()
+            aa60 = resample_pose_aa(aa, SRC_FPS, 60.0).cpu(); tran60 = resample_linear(tran, SRC_FPS, 60.0)   # rotations: matrix-space interp (GPU)
             buf.append((aa60, tran60, torch.zeros(10)))
             nclips += 1
             if sum(x[0].shape[0] for x in buf) >= chunk_frames:

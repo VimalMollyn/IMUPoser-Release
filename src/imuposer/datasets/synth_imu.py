@@ -67,14 +67,15 @@ def resample_pose_aa(aa, src_fps, dst_fps):
     rotation to within 1e-4)."""
     is_t = torch.is_tensor(aa)
     a = aa if is_t else torch.from_numpy(np.asarray(aa))
+    dev = a.device                                   # runs on the GPU when given GPU tensors (much faster than CPU under load)
     T, J = a.shape[0], a.shape[1]
     R = M.axis_angle_to_rotation_matrix(a.reshape(-1, 3).float()).view(T, J, 3, 3)
     # same index grid as _resample60 / resample_linear (torch.arange(0, T, step) with the end index clamped),
     # so every field of a sequence keeps the same number of frames
     idx = torch.arange(0, T, src_fps / dst_fps).numpy()
-    lo = torch.from_numpy(np.minimum(np.floor(idx).astype(np.int64), T - 1))
-    hi = torch.from_numpy(np.minimum(np.ceil(idx).astype(np.int64), T - 1))
-    w = torch.from_numpy((idx - np.floor(idx)).astype(np.float32)).view(-1, 1, 1, 1)
+    lo = torch.from_numpy(np.minimum(np.floor(idx).astype(np.int64), T - 1)).to(dev)
+    hi = torch.from_numpy(np.minimum(np.ceil(idx).astype(np.int64), T - 1)).to(dev)
+    w = torch.from_numpy((idx - np.floor(idx)).astype(np.float32)).view(-1, 1, 1, 1).to(dev)
     Rm = R[lo] * (1 - w) + R[hi] * w
     Rp = _project_so3(Rm)
     out = M.rotation_matrix_to_axis_angle(Rp.reshape(-1, 3, 3)).view(-1, J, 3)
@@ -174,13 +175,21 @@ def _resample60(tensor, target_fps):
     return torch.lerp(start, end, weights)
 
 
-def amass_dir_to_25fps(out, target_fps=25):
+def _pose_to_25(x, target_fps, device):
+    """axis-angle (T,24,3) @60fps -> rotation matrices (T',24,3,3) @target_fps via matrix-space interpolation;
+    done on `device` when given (GPU: the per-sequence conversions are overhead-bound on a loaded CPU)."""
+    xx = x.to(device) if device is not None else x
+    aa = resample_pose_aa(xx, 60.0, float(target_fps))
+    R = M.axis_angle_to_rotation_matrix(aa.reshape(-1, 3).contiguous()).view(-1, 24, 3, 3)
+    return R.cpu() if device is not None else R
+
+
+def amass_dir_to_25fps(out, target_fps=25, device=None):
     """`out` is the dict returned by synthesize_sequences (or loaded from an AMASS-style folder)."""
     fdata = {
         "joint": [_resample60(x, target_fps) for x in out["joint"]],
         # pose targets: interpolate rotations in matrix space (see resample_pose_aa), not axis-angle
-        "pose": [M.axis_angle_to_rotation_matrix(resample_pose_aa(x, 60.0, float(target_fps)).reshape(-1, 3).contiguous()).view(-1, 24, 3, 3)
-                 for x in out["pose"]],
+        "pose": [_pose_to_25(x, target_fps, device) for x in out["pose"]],
         "shape": out["shape"],
         "tran": [_resample60(x, target_fps) for x in out["tran"]],
         "acc": [_smooth_avg(_resample60(x, target_fps), s=5) for x in out["vacc"]],
