@@ -183,6 +183,18 @@ class GlobalModelDataset(Dataset):
     def _load_stream(self, data_files, window_length, need_act):
         data_dir = self.config.processed_imu_poser_25fps
         shard_root = shard_root_for(data_dir)
+        # DATASET_REPEAT="FORMHOI_=3,Nymeria_=2,MM_=0.5": per-dataset sampling weight by file-name prefix.
+        # >1 repeats that dataset's windows (sampled more often per epoch), <1 keeps a deterministic fraction.
+        # Lets a data mix emphasise DIP-like motion without discarding the rest. Default 1 for everything.
+        _rep = {}
+        for kv in os.environ.get("DATASET_REPEAT", "").split(","):
+            if "=" in kv:
+                k, v = kv.split("="); _rep[k.strip()] = float(v)
+        def _repeat_for(name):
+            for k, v in _rep.items():
+                if name.startswith(k):
+                    return v
+            return 1.0
         self.stores = []
         starts, lens, sids = [], [], []
         for fname in data_files:
@@ -190,14 +202,21 @@ class GlobalModelDataset(Dataset):
             st = ShardStore(sd)
             sid = len(self.stores)
             self.stores.append(st)
+            rep = _repeat_for(fname[:-3])
             b = 0
+            k = 0
             for L in st.seq_lens:
                 # identical windowing to torch.split(seq, window_length): full windows + a shorter tail
                 for s in range(0, L, window_length):
-                    starts.append(b + s)
-                    lens.append(min(window_length, L - s))
-                    sids.append(sid)
+                    k += 1
+                    n_copies = int(rep) + (1 if (rep - int(rep)) > 0 and (k * 0.6180339887) % 1.0 < (rep - int(rep)) else 0)
+                    for _ in range(n_copies):
+                        starts.append(b + s)
+                        lens.append(min(window_length, L - s))
+                        sids.append(sid)
                 b += L
+        if _rep:
+            print(f"[stream] DATASET_REPEAT applied: {_rep}", flush=True)
         self.win_start = np.asarray(starts, dtype=np.int64)
         self.win_len = np.asarray(lens, dtype=np.int32)
         self.win_store = np.asarray(sids, dtype=np.int32)

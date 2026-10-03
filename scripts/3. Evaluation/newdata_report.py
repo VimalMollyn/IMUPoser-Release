@@ -126,9 +126,15 @@ def arm_label(tag):
 
 
 def budget_of(tag, base):
-    m = re.search(r"(?:^|_)(?:xl|l|m|s)(\d{2})(?:_|$)", tag)
+    m = re.search(r"(?:^|_)(?:xl|l|m|s)(\d{2,3})(?:_|$)", tag)
     if m: return int(m.group(1))
     return 60
+
+
+EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
+                ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"),
+                ("treatment_rew", "reweighted: form-hoi ×3, Nymeria ×2, BONES/MM/Motion-X ×0.5"),
+                ("curr_trt2ctrl", "warm-started from the treatment (676 h, 60 ep) checkpoint")]
 
 
 def run_times(tag):
@@ -151,10 +157,7 @@ def collect_runs():
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
         n = params_of(d)
         seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
-        extra = ""
-        if tag.startswith("abl_"): extra = {"abl_formhoi": "+ form-hoi", "abl_bones": "+ BONES-SEED", "abl_mm": "+ MotionMillion mocap + Motion-X"}.get(tag.rsplit("_s", 1)[0].rsplit("_", 1)[0] if False else re.sub(r"_s\d+$", "", tag), tag)
-        if tag.startswith("gvfilt"): extra = "+ MotionGV filtered"
-        if tag.startswith("gvraw"): extra = "+ MotionGV unfiltered"
+        extra = next((lab for pre, lab in EXTRA_LABELS if tag.startswith(pre)), "")
         runs.append({"tag": tag, "arm": arm_label(tag), "extra": extra, "seed": seed, "base": base, "ft": ft, "eval": ev,
                      "times": run_times(tag), "params": n, "size": size_label(n), "budget": budget_of(tag, base),
                      "hours": base.get("hours"), "steps": (base.get("steps_per_epoch") or 0) * budget_of(tag, base)})
@@ -373,8 +376,8 @@ def build(out_path):
     curve = svg_lines(curve_series)
 
     # ---- ablations and GV
-    abl = sorted([r for r in runs if r["extra"] or (r["arm"] == "control" and r["size"] == "S" and r["budget"] == 20)], key=lambda r: (r["extra"], r["seed"]))
-    arows = "".join(f"<tr><td>control {html.escape(r['extra']) if r['extra'] else '(reference)'}</td><td class='num'>{r['seed']}</td><td class='num'>{fmt(r['hours'],0)}</td><td>{row_status(r)}</td>"
+    abl = sorted([r for r in runs if (r["extra"] or (r["arm"] == "control" and r["size"] == "S" and r["budget"] == 20)) and not r.get("interim")], key=lambda r: (r["extra"], r["seed"]))
+    arows = "".join(f"<tr><td>{r['arm'].rstrip('+')} {html.escape(r['extra']) if r['extra'] else '(reference)'}</td><td class='num'>{r['seed']}</td><td class='num'>{fmt(r['hours'],0)}</td><td>{row_status(r)}</td>"
                     f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjre'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjpe'])}</td></tr>" for r in abl)
 
     # ---- data table
