@@ -96,6 +96,7 @@ def main():
     ap.add_argument("--min_frames", type=int, default=30, help="drop clips shorter than this at 30fps")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--gv", action="store_true", help="convert the MotionGV folders (video-estimated mocap) as MGV_<folder>")
+    ap.add_argument("--tag_prefix", default="", help="override the output prefix (default MM / MGV), e.g. MGVRAW for an unfiltered MotionGV pass")
     ap.add_argument("--smooth", type=int, default=0,
                     help="odd window of a moving average applied to the raw 272-dim features at 30 fps before recovery "
                          "(video-estimated MotionGV is 4-10x jitterier than mocap; 5 brings its jerk/accel in line)")
@@ -128,7 +129,7 @@ def main():
 
     for tp in tars:
         sub = tp.name.replace(".tar.gz", "").replace("_seperate", "").replace("Datav1.1", "").replace("_smpl", "")
-        tag = f"{'MGV' if a.gv else 'MM'}_{sub}"
+        tag = f"{a.tag_prefix or ('MGV' if a.gv else 'MM')}_{sub}"
         if a.pack_and_delete and sorted(shard_root_for(out25).glob(f"{tag}_*/meta.json")) and not (out25 / f"{tag}_000.pt").exists():
             print(f"skip {tag} (shards exist)", flush=True); continue
         if (out25 / f"{tag}_000.pt").exists():

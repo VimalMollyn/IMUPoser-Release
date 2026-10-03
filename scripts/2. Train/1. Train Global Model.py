@@ -129,7 +129,7 @@ trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=
 # %%
 # RESUME_FROM=<last.ckpt> resumes optimizer + epoch/global_step (full Lightning resume),
 # so charts continue seamlessly when paired with WANDB_RUN_ID above.
-trainer.fit(model, datamodule=datamodule, ckpt_path=os.environ.get("RESUME_FROM"))
+trainer.fit(model, datamodule=datamodule, ckpt_path=(os.environ.get("RESUME_FROM") or None))
 
 # %%
 with open(checkpoint_path / "best_model.txt", "w") as f:

@@ -29,20 +29,30 @@ GV="$(ls "$SH" 2>/dev/null | grep -E '^MGV_' | grep -v '\.lock$\|\.packing$' | p
 GPU="${1:?gpu}"; shift
 for spec in "$@"; do
   IFS='|' read -r tag arm seed extra <<< "$spec"
-  case "$arm" in
+  # arms may append dataset groups by name prefix: "control+FORMHOI_,BONES_" or "treatment+MGV_" (prefixes are
+  # matched against .pt files in $DD and shard-only dataset dirs in $SH)
+  base_arm="${arm%%+*}"; plus="${arm#*+}"; [ "$plus" = "$arm" ] && plus=""
+  case "$base_arm" in
     curated)   DATA="$CURATED" ;;
     control)   DATA="$CURATED,$NYM" ;;
     treatment) [ -n "$NEW" ] || { echo "no new-data files in $DD" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW" ;;
     treatment_gv) [ -n "$NEW" ] && [ -n "$GV" ] || { echo "missing new-data or MGV_ shards" >&2; exit 1; }; DATA="$CURATED,$NYM,$NEW,$GV" ;;
     *) echo "unknown arm $arm" >&2; exit 1 ;;
   esac
+  if [ -n "$plus" ]; then
+    for pre in $(echo "$plus" | tr ',' ' '); do
+      ADD="$( { ls "$DD" | grep -E "^${pre}.*\.pt$" | sed 's/\.pt$//'; ls "$SH" 2>/dev/null | grep -E "^${pre}" | grep -v '\.lock$\|\.packing$'; } | sort -u | paste -sd, -)"
+      [ -n "$ADD" ] || { echo "no datasets with prefix $pre" >&2; exit 1; }
+      DATA="$DATA,$ADD"
+    done
+  fi
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"
   dir="$OUT/base_$tag"; mkdir -p "$dir"
   if [ ! -f "$dir/best_model.txt" ]; then
     # an interrupted base run (killed for a drive swap, crash, ...) resumes from its last epoch checkpoint
     RESUME=""; [ -f "$dir/last.ckpt" ] && RESUME="$dir/last.ckpt" && echo "[$(date -Is)] resuming $tag from last.ckpt"
     env MODEL=AvatarPoserModel EPOCHS=60 TRAIN_COMBO=lw_rw_rp AUG_CALIB_RAD=0.12217 SEED="$seed" \
-        TRAIN_DATASETS="$DATA" VAL_FILES=dip_train.pt ${extra:-} ${RESUME:+RESUME_FROM=$RESUME} \
+        TRAIN_DATASETS="$DATA" VAL_FILES=dip_train.pt ${extra:-} RESUME_FROM="$RESUME" \
         GPUS="$GPU" CHECKPOINT_DIR="$dir" WANDB_RUN_NAME="newdata_base_$tag" \
         uv run python "1. Train Global Model.py" --combo_id global --experiment newdata \
         > "$dir/train.log" 2>&1
