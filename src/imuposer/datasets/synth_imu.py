@@ -36,9 +36,9 @@ def resample_linear(arr, src_fps, dst_fps):
     is_t = torch.is_tensor(arr)
     a = arr.numpy() if is_t else np.asarray(arr)
     n = a.shape[0]
-    idx = np.arange(0, n, src_fps / dst_fps)
-    idx = idx[idx <= n - 1 + 1e-9]
-    lo = np.floor(idx).astype(np.int64)
+    # same grid + end clamp as _resample60 and resample_pose_aa, so all fields of a sequence keep one length
+    idx = torch.arange(0, n, src_fps / dst_fps).numpy()
+    lo = np.minimum(np.floor(idx).astype(np.int64), n - 1)
     hi = np.minimum(np.ceil(idx).astype(np.int64), n - 1)
     w = (idx - lo).reshape((-1,) + (1,) * (a.ndim - 1)).astype(np.float32)
     out = (a[lo] * (1 - w) + a[hi] * w).astype(np.float32)
