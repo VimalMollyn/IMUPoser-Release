@@ -141,6 +141,38 @@ EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("
                 ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"),
                 ("treatment_rew", "reweighted: form-hoi ×3, Nymeria ×2, BONES/MM/Motion-X ×0.5"),
                 ("curr_trt2ctrl", "warm-started from the treatment (676 h, 60 ep) checkpoint")]
+# SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
+# (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
+LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (r"_cos$", "cosine LR schedule in pretraining"),
+                (r"^ftseed(\d+)_", "FT seed {0} (FT-stage noise)"), (r"^ftlr5e5_", "FT lr 5e-5"), (r"^ftlr2e4_", "FT lr 2e-4"),
+                (r"^ftcos120_", "FT cosine LR, 120 ep"), (r"^ftcos_", "FT cosine LR"), (r"^ft120_", "FT 120 ep")]
+
+
+def lever_label(tag):
+    for pat, lab in LEVER_LABELS:
+        m = re.search(pat, tag)
+        if m: return lab.format(*m.groups())
+    return ""
+
+
+def lever_ref(tag):
+    """The plain run a lever run should be compared with."""
+    if tag.endswith("_cos"): return tag[:-4]
+    if tag.startswith("swa_"): return "scale_" + tag[4:]
+    m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
+    if m: return "scale_" + m.group(1)
+    return None
+
+
+def results_rows(kind):
+    out = []
+    for line in read(REPO / "autoresearch" / "results.jsonl").splitlines():
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if r.get("kind") == kind: out.append(r)
+    return out
 
 
 def run_times(tag):
@@ -156,17 +188,42 @@ def run_times(tag):
 
 def collect_runs():
     runs = []
-    for d in sorted(CK.glob("base_*")):
-        tag = d.name[5:]
-        base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
+
+    def mk_run(tag, d, base):
         ft = parse_train_log(CK / f"ft_{tag}" / "train.log")
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
         n = params_of(d)
         seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
-        extra = next((lab for pre, lab in EXTRA_LABELS if tag.startswith(pre)), "")
-        runs.append({"tag": tag, "arm": arm_label(tag), "extra": extra, "seed": seed, "base": base, "ft": ft, "eval": ev,
-                     "times": run_times(tag), "params": n, "size": size_label(n), "budget": budget_of(tag, base),
-                     "hours": base.get("hours"), "steps": (base.get("steps_per_epoch") or 0) * budget_of(tag, base)})
+        lever = lever_label(tag)
+        extra = lever or next((lab for pre, lab in EXTRA_LABELS if tag.startswith(pre)), "")
+        return {"tag": tag, "arm": arm_label(tag), "extra": extra, "lever": lever, "seed": seed, "base": base, "ft": ft, "eval": ev,
+                "times": run_times(tag), "params": n, "size": size_label(n), "budget": budget_of(tag, base),
+                "hours": base.get("hours"), "steps": (base.get("steps_per_epoch") or 0) * budget_of(tag, base)}
+
+    for d in sorted(CK.glob("base_*")):
+        tag = d.name[5:]
+        base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
+        if tag.startswith("swa_"):      # averaged checkpoints: hours / steps / status come from the source base run
+            sb = parse_train_log(CK / f"base_{lever_ref(tag)}" / "train.log") or {}
+            base = dict(base, hours=sb.get("hours"), steps_per_epoch=sb.get("steps_per_epoch"), status="done",
+                        epochs_done=sb.get("epochs_done", 0), val=sb.get("val", {}))
+        runs.append(mk_run(tag, d, base))
+    # FT-only variants (BASE_FROM=<tag> in run_newdata.sh): no base_<tag> dir, ft_<tag>/ft_meta.json names the base
+    for fd in sorted(CK.glob("ft_*")):
+        tag = fd.name[3:]
+        if (CK / f"base_{tag}").exists() or not (fd / "ft_meta.json").exists(): continue
+        try:
+            meta = json.loads(read(fd / "ft_meta.json"))
+        except Exception:
+            continue
+        d = CK / f"base_{meta['base_from']}"
+        base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
+        runs.append(mk_run(tag, d, base))
+    for d in sorted(CK.glob("base_*")):
+        tag = d.name[5:]
+        base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
+        n = params_of(d)
+        seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
         for idir in sorted(CK.glob(f"ft_{tag}_interim_ep*")):
             ep = int(re.search(r"interim_ep(\d+)", idir.name).group(1))
             iev = parse_eval(idir / "eval_dip_test.log")
@@ -393,6 +450,45 @@ def build(out_path):
 
     # ---- leaderboard
     lb = sorted(fin, key=lambda r: r["eval"]["sip"])[:10]
+
+    # ---- SOTA levers (recipe variations on a finished base) and ensembles of existing checkpoints
+    by_tag = {r["tag"]: r for r in fin}
+    def delta(v, ref):
+        if v is None or ref is None: return "–"
+        d = v - ref
+        cls = "ok" if d < -NOISE else "bad" if d > NOISE else "muted"
+        return f"<span class='{cls}'>{d:+.2f}</span>"
+    levers = sorted([r for r in runs if r.get("lever") and not r.get("interim")], key=lambda r: (r["eval"]["sip"] if r["eval"] else 99, r["tag"]))
+    lever_rows = ""
+    for r in levers:
+        ref = by_tag.get(lever_ref(r["tag"]) or "")
+        lever_rows += (f"<tr><td class='mono'>{html.escape(r['tag'])}</td><td>{html.escape(r['extra'])}</td><td>{r['size']} {r['arm']}</td>"
+                       f"<td class='mono'>{html.escape(lever_ref(r['tag']) or '–')} <span class='muted'>{fmt(ref and ref['eval']['sip'])}</span></td><td>{row_status(r)}</td>"
+                       f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td class='num'>{delta(r['eval'] and r['eval']['sip'], ref and ref['eval']['sip'])}</td></tr>")
+    ens = sorted(results_rows("ensemble"), key=lambda r: r.get("fval_sip") or 99)
+    best_single = best["eval"]["sip"] if best else None
+    ens_rows = "".join(f"<tr><td class='mono'>{html.escape(' + '.join(m.replace('ft_', '') for m in r.get('members', [])))}</td><td class='num'>{len(r.get('members', []))}</td><td class='num'>{r.get('stride', 125)}</td>"
+                       f"<td class='num'>{fmt(r.get('fval_sip'))}</td><td class='num'><b>{fmt(r.get('sip_dip_test'))}</b></td><td class='num'>{fmt(r.get('mpjre'))}</td><td class='num'>{fmt(r.get('mpjpe_cm'))}</td>"
+                       f"<td class='num'>{delta(r.get('sip_dip_test'), best_single)}</td></tr>" for r in ens)
+    best_ens = min(ens, key=lambda r: r.get("fval_sip") or 99) if ens else None
+    win = next((r for r in results_rows("lever") if r.get("name") == "lever_eval_window"), None)
+    win_rows = ""
+    if win:
+        ws = sorted({w for d in win["fval"].values() for w in d}, key=int)
+        win_rows = "".join(f"<tr><td>{m}</td>" + "".join(f"<td class='num'>{fmt(win['fval'][m].get(w))}</td>" for w in ws) + "</tr>" for m in win["fval"])
+        win_head = "".join(f"<th class='num'>{w} frames</th>" for w in ws)
+    else:
+        win_head = ""
+    stride = next((r for r in results_rows("lever") if r.get("name") == "lever_eval_stride"), None)
+    stride_rows, stride_head = "", ""
+    if stride:
+        ss = sorted({s for d in stride["fval"].values() for s in d}, key=int, reverse=True)
+        stride_head = "".join(f"<th class='num'>stride {s}</th>" for s in ss)
+        for m in stride["fval"]:
+            stride_rows += f"<tr><td>{m} · fval</td>" + "".join(f"<td class='num'>{fmt(stride['fval'][m].get(s))}</td>" for s in ss) + "</tr>"
+            stride_rows += f"<tr><td>{m} · dip_test</td>" + "".join(f"<td class='num'><b>{fmt(stride['dip_test'][m].get(s))}</b></td>" if stride['dip_test'][m].get(s) is not None else "<td class='num muted'>–</td>" for s in ss) + "</tr>"
+    ens_head = (f"Best ensemble of existing fine-tuned checkpoints, selected on fval: dip_test SIP {best_ens['sip_dip_test']:.2f} "
+                f"({len(best_ens['members'])} members{', inference stride ' + str(best_ens['stride']) if best_ens.get('stride') else ''}, no new training)." if best_ens else "")
     lrows = "".join(f"<tr><td class='num'>{i+1}</td><td>{html.escape(r['tag'])}</td><td>{r['size']} {fmt((r['params'] or 0)/1e6,1)} M</td><td>{r['arm']} {html.escape(r['extra'])}</td><td class='num'>{fmt(r['hours'],0)}</td><td class='num'>{r['budget']}</td>"
                     f"<td class='num'><b>{r['eval']['sip']:.2f}</b></td><td class='num'>{r['eval']['mpjre']:.2f}</td><td class='num'>{r['eval']['mpjpe']:.2f}</td></tr>" for i, r in enumerate(lb))
 
@@ -427,7 +523,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <div class="eyebrow">IMUPoser · left watch + right watch + right pocket · 25 Hz · page generated {html.escape(now)} ET</div>
 <h1>How far do data and model size take sparse-IMU pose estimation?</h1>
 <p>One benchmark throughout: pretrain on synthetic IMU from motion capture, fine-tune on real DIP-IMU training subjects, report on the held-out DIP test subjects (s09, s10). SIP is the mean angular error of hips and shoulders; lower is better. Every number on this page is that single protocol with one thing varied at a time.</p>
-<div class="headline"><div class="eyebrow">headline</div><p class="big">{html.escape(head)}</p><p class="muted" style="margin:0">{html.escape(sub)}</p></div>
+<div class="headline"><div class="eyebrow">headline</div><p class="big">{html.escape(head)}</p><p style="margin:0 0 6px">{html.escape(ens_head)}</p><p class="muted" style="margin:0">{html.escape(sub)}</p></div>
 
 <h2>Scaling laws</h2>
 <p>Model size: S = d256/4 layers (3.3 M), M = d384/6 (10.9 M), L = d512/8 (25.6 M), XL = d768/8 (~58 M); same optimizer (AdamW 3e-4), effective batch 256, dropout 0.1. Data: curated-12 AMASS (35 h), control = curated-12 + Nymeria (267 h), treatment = control + BONES-SEED + form-hoi + MotionMillion mocap + Motion-X (676 h). Round markers are a fixed 20-epoch budget (each run sees every window 20 times); squares are the full 60-epoch schedule.</p>
@@ -441,6 +537,18 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <h2>Leaderboard (all finished runs)</h2>
 <div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{lrows}</tbody></table></div>
 <p class="muted">Previous deliverable (2026-09-01, same S model and control data, in-RAM loader, original Nymeria files): {PREV_DELIVERABLE:.2f}.</p>
+
+<h2>Pushing the best model: recipe levers and ensembles</h2>
+<p>Model size saturates near 11 M parameters on 267 h and the new data does not move the converged M model, so the remaining room is in the recipe. Each lever below changes one thing on top of a finished base run and is compared with that run; green means better than the ±{NOISE} seed noise, red worse. Fine-tune-only variants reuse the pretrained checkpoint, so they also measure how much of the run-to-run noise comes from the fine-tuning stage alone.</p>
+<div class="tablewrap"><table><thead><tr><th>run</th><th>lever</th><th>model</th><th>compared with</th><th>status</th><th class="num">SIP °</th><th class="num">Δ</th></tr></thead><tbody>{lever_rows}</tbody></table></div>
+<h3>Ensembles of existing fine-tuned checkpoints</h3>
+<p>{html.escape(ens_head)} Members are averaged in the 6-D rotation representation before orthonormalisation. Candidate ensembles were ranked on fval (the fine-tuning validation subjects) and dip_test is reported for every candidate; the fval order and the dip_test order agree. No new seeds were trained for this.</p>
+<div class="tablewrap"><table><thead><tr><th>members</th><th class="num">n</th><th class="num">stride</th><th class="num">fval SIP °</th><th class="num">dip_test SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">Δ vs best single</th></tr></thead><tbody>{ens_rows}</tbody></table></div>
+<h3>Inference window</h3>
+<p>The transformer is trained on 125-frame windows and evaluated by tiling each sequence with that window. Longer windows at inference degrade sharply (fval SIP below): the model does not extrapolate to longer contexts.</p>
+<div class="tablewrap"><table><thead><tr><th>model</th>{win_head}</tr></thead><tbody>{win_rows}</tbody></table></div>
+<p>Keeping the 125-frame window but sliding it with a smaller stride and averaging the overlapping predictions removes the error at window boundaries. The gain is small but monotone in both models and both splits (stride 125 is the original tiling; stride 31 costs 4× the inference compute, stride 12 10×). Every other number on this page uses the original tiling so runs stay comparable.</p>
+<div class="tablewrap"><table><thead><tr><th>model · split</th>{stride_head}</tr></thead><tbody>{stride_rows}</tbody></table></div>
 
 <h2>Does the new motion data help the S model? (the original question)</h2>
 <div class="tablewrap"><table><thead><tr><th>arm</th><th class="num">seed</th><th class="num">hours</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{tc_rows}</tbody></table></div>

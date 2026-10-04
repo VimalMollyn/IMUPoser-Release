@@ -46,8 +46,13 @@ for spec in "$@"; do
       DATA="$DATA,$ADD"
     done
   fi
+  # FT-stage knobs (defaults = the recipe every run so far used). BASE_FROM=<tag> reuses another run's finished
+  # base checkpoint (FT-only variants: FT_LR / FT_EPOCHS / FT_SEED / FT_SCHED), so the base is trained once.
+  getk(){ echo "${extra:-}" | tr ' ' '\n' | grep "^$1=" | tail -1 | cut -d= -f2-; }
+  BASE_FROM="$(getk BASE_FROM)"; FT_LR="$(getk FT_LR)"; FT_EPOCHS="$(getk FT_EPOCHS)"; FT_SEED="$(getk FT_SEED)"; FT_SCHED="$(getk FT_SCHED)"
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"
-  dir="$OUT/base_$tag"; mkdir -p "$dir"
+  dir="$OUT/base_${BASE_FROM:-$tag}"; mkdir -p "$dir"
+  if [ -n "$BASE_FROM" ] && [ ! -f "$dir/best_model.txt" ]; then echo "BASE_FROM=$BASE_FROM has no finished base in $dir" >&2; exit 1; fi
   if [ ! -f "$dir/best_model.txt" ]; then
     # an interrupted base run (killed for a drive swap, crash, ...) resumes from its last epoch checkpoint
     RESUME=""; [ -f "$dir/last.ckpt" ] && RESUME="$dir/last.ckpt" && echo "[$(date -Is)] resuming $tag from last.ckpt"
@@ -63,11 +68,15 @@ for spec in "$@"; do
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
   # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT
   # (FT is always 60 ep, constant TF_LR=1e-4, on ftrain) so the FT recipe stays identical across arms
-  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=' | grep -v '^$' | paste -sd' ' -)"
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^BASE_FROM=\|^FT_' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
+  if [ -n "$BASE_FROM$FT_LR$FT_EPOCHS$FT_SEED$FT_SCHED" ]; then
+    printf '{"base_from": "%s", "ft_lr": "%s", "ft_epochs": "%s", "ft_seed": "%s", "ft_sched": "%s"}\n' \
+      "${BASE_FROM:-$tag}" "${FT_LR:-1e-4}" "${FT_EPOCHS:-60}" "${FT_SEED:-1}" "${FT_SCHED:-const}" > "$ftdir/ft_meta.json"
+  fi
   if [ ! -f "$ftdir/best_model.txt" ]; then
-    env MODEL=AvatarPoserModel TF_LR=1e-4 EPOCHS=60 TRAIN_COMBO=lw_rw_rp SEED=1 \
-        TRAIN_DATASETS=ftrain VAL_FILES=fval.pt $extra_model \
+    env MODEL=AvatarPoserModel TF_LR="${FT_LR:-1e-4}" EPOCHS="${FT_EPOCHS:-60}" TRAIN_COMBO=lw_rw_rp SEED="${FT_SEED:-1}" \
+        LR_SCHED="${FT_SCHED:-}" TRAIN_DATASETS=ftrain VAL_FILES=fval.pt $extra_model \
         GPUS="$GPU" CONTINUE_FROM="$BEST" CHECKPOINT_DIR="$ftdir" WANDB_RUN_NAME="newdata_ft_$tag" \
         uv run python "1. Train Global Model.py" --combo_id global --experiment newdata \
         > "$ftdir/train.log" 2>&1

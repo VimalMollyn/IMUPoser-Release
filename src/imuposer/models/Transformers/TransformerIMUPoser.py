@@ -76,6 +76,36 @@ class _TransformerNet(nn.Module):
         return y.masked_fill(pad_mask.unsqueeze(-1), 0.0)
 
 
+def windowed_inference(net, imu_inputs, imu_lens, W):
+    r"""Eval-time sliding window for long sequences (shared by the transformer-based models).
+
+    TF_EVAL_STRIDE (default = W): with stride == W the sequence is tiled with non-overlapping windows (the
+    original behaviour); with a smaller stride the windows overlap and per-frame predictions are averaged in
+    the r6d representation (re-orthonormalised downstream by r6d_to_rotation_matrix)."""
+    T = imu_inputs.size(1)
+    S = int(os.environ.get("TF_EVAL_STRIDE", str(W)))
+    if S >= W:
+        outs = []
+        for s in range(0, T, W):
+            chunk = imu_inputs[:, s:s + W]
+            clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
+            outs.append(net(chunk, clen))
+        return torch.cat(outs, dim=1)
+    starts = list(range(0, T - W + 1, S))
+    if starts[-1] != T - W:
+        starts.append(T - W)            # a final window flush with the sequence end so every frame is covered
+    out, cnt = None, torch.zeros(T, device=imu_inputs.device)
+    for s in starts:
+        chunk = imu_inputs[:, s:s + W]
+        clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
+        y = net(chunk, clen)
+        if out is None:
+            out = torch.zeros(imu_inputs.size(0), T, y.size(-1), device=y.device, dtype=y.dtype)
+        out[:, s:s + y.size(1)] += y
+        cnt[s:s + y.size(1)] += 1
+    return out / cnt.clamp(min=1).view(1, -1, 1)
+
+
 class TransformerIMUPoser(pl.LightningModule):
     r"""Attention-based pose model; same loss/training loop as IMUPoserModel (fair A/B vs the LSTM)."""
     def __init__(self, config: Config):
@@ -115,12 +145,7 @@ class TransformerIMUPoser(pl.LightningModule):
         # whole take at once. Non-overlapping chunks match the training length distribution.
         if self.training or T <= W:
             return self.net(imu_inputs, imu_lens)
-        outs = []
-        for s in range(0, T, W):
-            chunk = imu_inputs[:, s:s + W]
-            clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
-            outs.append(self.net(chunk, clen))
-        return torch.cat(outs, dim=1)
+        return windowed_inference(self.net, imu_inputs, imu_lens, W)
 
     def _step(self, batch):
         imu, target, lens, _ = batch

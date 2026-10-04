@@ -21,7 +21,7 @@ import lightning.pytorch as pl
 from imuposer.smpl.parametricModel import ParametricModel
 from imuposer.math.angular import r6d_to_rotation_matrix
 from imuposer.config import Config
-from .TransformerIMUPoser import _TransformerNet
+from .TransformerIMUPoser import _TransformerNet, windowed_inference
 
 # SMPL joints the 5 IMUs sit on (= ji_mask[:5] from preprocessing): L/R elbow, L/R hip, head.
 _IMU_JOINTS = [18, 19, 1, 2, 15]
@@ -99,12 +99,7 @@ class AvatarPoserModel(pl.LightningModule):
         W = int(os.environ.get("TF_EVAL_WINDOW", "125"))
         if self.training or T <= W:
             return self.net(imu_inputs, imu_lens)
-        outs = []
-        for s in range(0, T, W):
-            chunk = imu_inputs[:, s:s + W]
-            clen = [int(min(max(l - s, 0), chunk.size(1))) for l in imu_lens]
-            outs.append(self.net(chunk, clen))
-        return torch.cat(outs, dim=1)
+        return windowed_inference(self.net, imu_inputs, imu_lens, W)   # TF_EVAL_STRIDE < W: overlapping windows
 
     def _step(self, batch):
         imu, target, lens, _ = batch

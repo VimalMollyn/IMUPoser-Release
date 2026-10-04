@@ -56,11 +56,19 @@ def rot_fro(A, B):
 
 
 # ---- metric accumulation (mirrors eval_full_metrics.seq_metrics) -------------------------------
+def _fk_mesh(bm, p, chunk=512):
+    r"""forward_kinematics(calc_mesh=True) in frame chunks: the mesh skinning intermediate is ~0.5 MB/frame,
+    so a long fval/dip sequence (several thousand frames) OOMs next to a training job. Per-frame op, so
+    the result is identical to one call."""
+    outs = [bm.forward_kinematics(p[s:s + chunk], calc_mesh=True) for s in range(0, p.shape[0], chunk)]
+    return tuple(torch.cat([o[i] for o in outs]) for i in range(3))
+
+
 def seq_metrics(pr, gt, bm, dev):
     I3 = torch.eye(3, device=dev); n = pr.shape[0]
     p, t = pr.clone(), gt.clone(); p[:, IGN] = I3; t[:, IGN] = I3
-    gp, jp, vp = bm.forward_kinematics(p, calc_mesh=True)
-    gg, jg, vg = bm.forward_kinematics(t, calc_mesh=True)
+    gp, jp, vp = _fk_mesh(bm, p)
+    gg, jg, vg = _fk_mesh(bm, t)
     off = (jg[:, :1] - jp[:, :1])
     g = radian_to_degree(angle_between(gp.reshape(-1, 3, 3), gg.reshape(-1, 3, 3)).view(n, 24))
     sip = g[:, SIP].mean(1).sum().item(); mpjre = g.mean(1).sum().item()
@@ -205,7 +213,14 @@ def main():
     def build(name):
         path = name if name.endswith(".ckpt") else FT + name + "/last.ckpt"
         sd = torch.load(path, map_location=dev, weights_only=False)["state_dict"]
-        cfg.model = _detect(sd); m = get_model(cfg); m.load_state_dict(sd, strict=False); return m.eval().to(dev)
+        cfg.model = _detect(sd)
+        # transformer members: read d_model / layers / FF width off the weights so mixed-size ensembles
+        # (e.g. M + L) build correctly without per-member env (TF_HEADS stays env/default: not inferable)
+        if "net.inp.weight" in sd:
+            os.environ["TF_DMODEL"] = str(sd["net.inp.weight"].shape[0])
+            os.environ["TF_LAYERS"] = str(len({k.split(".")[3] for k in sd if k.startswith("net.enc.layers.")}))
+            os.environ["TF_FF"] = str(sd["net.enc.layers.0.linear1.weight"].shape[0])
+        m = get_model(cfg); m.load_state_dict(sd, strict=False); return m.eval().to(dev)
     members = [build(n) for n in a.members.split(",")]
 
     combo = amass_combos[a.combo]                         # e.g. lw_rp_h [0,3,4], lw_rw_rp [0,1,3]
