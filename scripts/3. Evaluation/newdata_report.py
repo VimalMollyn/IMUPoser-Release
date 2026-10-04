@@ -140,7 +140,11 @@ def budget_of(tag, base):
 EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
                 ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"),
                 ("treatment_rew", "reweighted: form-hoi ×3, Nymeria ×2, BONES/MM/Motion-X ×0.5"),
-                ("curr_trt2ctrl", "warm-started from the treatment (676 h, 60 ep) checkpoint")]
+                ("curr_trt2ctrl", "curriculum: treatment (676 h, 60 ep) -> 20 ep on control"),
+                ("mix025", "treatment, new data sampled ×0.25 per epoch"), ("mix050", "treatment, new data sampled ×0.5 per epoch"),
+                ("mix200", "treatment, new data sampled ×2 per epoch"),
+                ("abl_amassrest", "+ the 13 AMASS sets outside curated-12"),
+                ("dl_", "DIP-like subset of the new data (pose-distance / accel rule)")]
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
 LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (r"_cos$", "cosine LR schedule in pretraining"),

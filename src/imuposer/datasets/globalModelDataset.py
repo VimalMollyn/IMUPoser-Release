@@ -203,22 +203,32 @@ class GlobalModelDataset(Dataset):
         # the full data (fixed compute, less unique motion). The "[stream] ... h" line reports the kept hours.
         frac = float(os.environ.get("DATASET_FRACTION", "1")) if self.apply_fraction else 1.0
         assert 0 < frac <= 1, f"DATASET_FRACTION must be in (0, 1], got {frac}"
+        # DATASET_KEEP=<json>: {"<dataset name>": [kept sequence indices], ...} (training set only). Datasets not
+        # listed are used whole. Lets a data-selection rule (e.g. DIP-likeness of the synthetic IMU) pick sequences
+        # without copying shards. Reported in the "[stream] ... h" line through the kept hours.
+        keep = {}
+        if self.apply_fraction and os.environ.get("DATASET_KEEP"):
+            import json as _json
+            keep = {k: set(v) for k, v in _json.load(open(os.environ["DATASET_KEEP"])).items()}
         self.stores = []
         starts, lens, sids = [], [], []
         j = 0
         kept_frames = 0
+        dropped_frames = 0
         for fname in data_files:
             sd = ensure_packed(data_dir / fname, shard_root)
             st = ShardStore(sd)
             sid = len(self.stores)
             self.stores.append(st)
             rep = _repeat_for(fname[:-3]) / frac
+            kset = keep.get(fname[:-3])
             b = 0
             k = 0
-            for L in st.seq_lens:
+            for si, L in enumerate(st.seq_lens):
                 j += 1
-                if frac < 1 and (j * 0.6180339887) % 1.0 >= frac:
+                if (frac < 1 and (j * 0.6180339887) % 1.0 >= frac) or (kset is not None and si not in kset):
                     b += L
+                    dropped_frames += L
                     continue
                 kept_frames += L
                 # identical windowing to torch.split(seq, window_length): full windows + a shorter tail
@@ -235,6 +245,9 @@ class GlobalModelDataset(Dataset):
         if frac < 1:
             print(f"[stream] DATASET_FRACTION={frac:g}: kept {kept_frames / self.fps / 3600:.1f} h of unique motion "
                   f"({j} sequences -> windows repeated x{1 / frac:g})", flush=True)
+        if keep:
+            print(f"[stream] DATASET_KEEP: {len(keep)} datasets filtered, dropped {dropped_frames / self.fps / 3600:.1f} h, "
+                  f"kept {kept_frames / self.fps / 3600:.1f} h", flush=True)
         self.win_start = np.asarray(starts, dtype=np.int64)
         self.win_len = np.asarray(lens, dtype=np.int32)
         self.win_store = np.asarray(sids, dtype=np.int32)
@@ -242,7 +255,7 @@ class GlobalModelDataset(Dataset):
         self.joint_windows = self.tran_windows = None
         self.num_windows = len(starts)
         self.num_combos = len(self.combos)
-        total_h = (kept_frames if frac < 1 else sum(st.n_frames for st in self.stores)) / self.fps / 3600
+        total_h = (kept_frames if (frac < 1 or keep) else sum(st.n_frames for st in self.stores)) / self.fps / 3600
         print(f"[stream] {len(self.stores)} files, {self.num_windows} windows, {total_h:.1f} h @ {self.fps:g} fps "
               f"(memmap shards in {shard_root})", flush=True)
         if need_act:

@@ -54,6 +54,14 @@ for spec in "$@"; do
   # another run = the N-epoch budget point of that run, without training it again
   SNAPSHOT_FROM="$(getk SNAPSHOT_FROM)"; SNAP_EP=""
   if [ -n "$SNAPSHOT_FROM" ]; then BASE_FROM="${SNAPSHOT_FROM%%:*}"; SNAP_EP="${SNAPSHOT_FROM##*:}"; fi
+  # CONTINUE_FROM_TAG=<tag>: warm-start the base stage from that run's best checkpoint (curriculum: broad -> narrow)
+  CFT="$(getk CONTINUE_FROM_TAG)"
+  if [ -n "$CFT" ]; then
+    CFB="$(head -1 "$OUT/base_$CFT/best_model.txt" 2>/dev/null)"
+    [ -f "$CFB" ] || { echo "CONTINUE_FROM_TAG=$CFT: no finished base" >&2; exit 1; }
+    extra="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^CONTINUE_FROM_TAG=' | paste -sd' ' -) CONTINUE_FROM=$CFB"
+    echo "[$(date -Is)] $tag warm-starts from $CFB"
+  fi
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"
   dir="$OUT/base_${BASE_FROM:-$tag}"; mkdir -p "$dir"
   if [ -n "$SNAP_EP" ]; then
@@ -75,7 +83,7 @@ for spec in "$@"; do
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
   # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT
   # (FT is always 60 ep, constant TF_LR=1e-4, on ftrain) so the FT recipe stays identical across arms
-  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^TF_WD=\|^BASE_FROM=\|^SNAPSHOT_\|^FT_' | grep -v '^$' | paste -sd' ' -)"
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^DATASET_KEEP=\|^CONTINUE_FROM=\|^TF_WD=\|^BASE_FROM=\|^SNAPSHOT_\|^FT_' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
   if [ -n "$BASE_FROM$FT_LR$FT_EPOCHS$FT_SEED$FT_SCHED" ]; then
     printf '{"base_from": "%s", "ft_lr": "%s", "ft_epochs": "%s", "ft_seed": "%s", "ft_sched": "%s", "snapshot_epoch": %s, "snapshot_src": "%s"}\n' \
