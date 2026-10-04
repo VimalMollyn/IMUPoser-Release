@@ -68,7 +68,7 @@ for spec in "$@"; do
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
   # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT
   # (FT is always 60 ep, constant TF_LR=1e-4, on ftrain) so the FT recipe stays identical across arms
-  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^BASE_FROM=\|^FT_' | grep -v '^$' | paste -sd' ' -)"
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^TF_WD=\|^BASE_FROM=\|^FT_' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
   if [ -n "$BASE_FROM$FT_LR$FT_EPOCHS$FT_SEED$FT_SCHED" ]; then
     printf '{"base_from": "%s", "ft_lr": "%s", "ft_epochs": "%s", "ft_seed": "%s", "ft_sched": "%s"}\n' \

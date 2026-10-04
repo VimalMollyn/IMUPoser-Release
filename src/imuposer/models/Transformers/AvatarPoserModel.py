@@ -170,7 +170,8 @@ class AvatarPoserModel(pl.LightningModule):
             self.log(f"{loop}_loss", sum(outputs) / len(outputs), prog_bar=True, batch_size=self.batch_size)
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        # TF_WD: AdamW weight decay (default 1e-4 = every result so far)
+        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=float(os.environ.get("TF_WD", "1e-4")))
         # LR_SCHED=cosine: anneal per epoch from TF_LR to TF_LR*LR_MIN_FRAC over the run (default: constant LR,
         # the recipe every result before 2026-10-04 used). Pre-LN needs no warmup.
         sched = os.environ.get("LR_SCHED", "").lower()

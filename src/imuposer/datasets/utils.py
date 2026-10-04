@@ -70,7 +70,7 @@ def get_dataset(config=None, test_only=False):
         if test_only:
             return test_dataset
 
-        train_dataset = GlobalModelDataset("train", config, data_files=train_files)
+        train_dataset = GlobalModelDataset("train", config, data_files=train_files, apply_fraction=True)
         train_dataset.augment = True   # domain randomization on TRAIN only (val/test stay clean)
         val_dataset = GlobalModelDataset("train", config, data_files=val_files)
         return train_dataset, test_dataset, val_dataset

@@ -31,8 +31,11 @@ class GlobalModelDataset(Dataset):
     combo masking is applied lazily in ``__getitem__`` instead of being materialized up
     front. ``idx`` maps to ``(window_idx, combo_idx)`` via integer div/mod.
     """
-    def __init__(self, split="train", config:Config=None, data_files=None):
+    def __init__(self, split="train", config:Config=None, data_files=None, apply_fraction=False):
         super().__init__()
+        # apply_fraction: honour DATASET_FRACTION (unique-data subsampling) — only the TRAINING dataset passes True;
+        # the validation / test datasets (also built with split="train") must stay complete for selection.
+        self.apply_fraction = apply_fraction
 
         # load the data
         self.train = split
@@ -195,17 +198,29 @@ class GlobalModelDataset(Dataset):
                 if name.startswith(k):
                     return v
             return 1.0
+        # DATASET_FRACTION=f (0<f<=1): keep a deterministic f of the SEQUENCES of every dataset (unique-data axis of
+        # a scaling law) and repeat their windows 1/f times so an epoch has the same number of optimizer steps as
+        # the full data (fixed compute, less unique motion). The "[stream] ... h" line reports the kept hours.
+        frac = float(os.environ.get("DATASET_FRACTION", "1")) if self.apply_fraction else 1.0
+        assert 0 < frac <= 1, f"DATASET_FRACTION must be in (0, 1], got {frac}"
         self.stores = []
         starts, lens, sids = [], [], []
+        j = 0
+        kept_frames = 0
         for fname in data_files:
             sd = ensure_packed(data_dir / fname, shard_root)
             st = ShardStore(sd)
             sid = len(self.stores)
             self.stores.append(st)
-            rep = _repeat_for(fname[:-3])
+            rep = _repeat_for(fname[:-3]) / frac
             b = 0
             k = 0
             for L in st.seq_lens:
+                j += 1
+                if frac < 1 and (j * 0.6180339887) % 1.0 >= frac:
+                    b += L
+                    continue
+                kept_frames += L
                 # identical windowing to torch.split(seq, window_length): full windows + a shorter tail
                 for s in range(0, L, window_length):
                     k += 1
@@ -217,6 +232,9 @@ class GlobalModelDataset(Dataset):
                 b += L
         if _rep:
             print(f"[stream] DATASET_REPEAT applied: {_rep}", flush=True)
+        if frac < 1:
+            print(f"[stream] DATASET_FRACTION={frac:g}: kept {kept_frames / self.fps / 3600:.1f} h of unique motion "
+                  f"({j} sequences -> windows repeated x{1 / frac:g})", flush=True)
         self.win_start = np.asarray(starts, dtype=np.int64)
         self.win_len = np.asarray(lens, dtype=np.int32)
         self.win_store = np.asarray(sids, dtype=np.int32)
@@ -224,7 +242,7 @@ class GlobalModelDataset(Dataset):
         self.joint_windows = self.tran_windows = None
         self.num_windows = len(starts)
         self.num_combos = len(self.combos)
-        total_h = sum(st.n_frames for st in self.stores) / self.fps / 3600
+        total_h = (kept_frames if frac < 1 else sum(st.n_frames for st in self.stores)) / self.fps / 3600
         print(f"[stream] {len(self.stores)} files, {self.num_windows} windows, {total_h:.1f} h @ {self.fps:g} fps "
               f"(memmap shards in {shard_root})", flush=True)
         if need_act:

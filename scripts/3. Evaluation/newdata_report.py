@@ -144,6 +144,7 @@ EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
 LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (r"_cos$", "cosine LR schedule in pretraining"),
+                (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
                 (r"^ftseed(\d+)_", "FT seed {0} (FT-stage noise)"), (r"^ftlr5e5_", "FT lr 5e-5"), (r"^ftlr2e4_", "FT lr 2e-4"),
                 (r"^ftcos120_", "FT cosine LR, 120 ep"), (r"^ftcos_", "FT cosine LR"), (r"^ft120_", "FT 120 ep")]
 
@@ -158,6 +159,7 @@ def lever_label(tag):
 def lever_ref(tag):
     """The plain run a lever run should be compared with."""
     if tag.endswith("_cos"): return tag[:-4]
+    if tag.endswith("_wd1e2"): return tag[:-6]
     if tag.startswith("swa_"): return "scale_" + tag[4:]
     m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
     if m: return "scale_" + m.group(1)
@@ -218,7 +220,7 @@ def collect_runs():
             continue
         d = CK / f"base_{meta['base_from']}"
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
-        runs.append(mk_run(tag, d, base))
+        runs.append(dict(mk_run(tag, d, base), ft_variant=True))   # same pretrained model, FT recipe varied
     for d in sorted(CK.glob("base_*")):
         tag = d.name[5:]
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
@@ -384,7 +386,10 @@ def build(out_path):
     rows = data_hours()
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     fin = [r for r in runs if r["eval"] and not r.get("interim")]
-    best = min(fin, key=lambda r: r["eval"]["sip"]) if fin else None
+    # headline = best run under the FIXED protocol. Lever variants are reported in their own section: picking the
+    # best of several recipe variants by its dip_test score would be selection on the test set.
+    proto = [r for r in fin if not r.get("lever")]
+    best = min(proto, key=lambda r: r["eval"]["sip"]) if proto else None
 
     # ---- headline
     if best:
@@ -449,7 +454,7 @@ def build(out_path):
     drows = "".join(f"<tr><td>{html.escape(r['group'])}</td><td class='num'>{r['files']}</td><td class='num'>{r['hours']:.1f}</td><td class='num'>{r['seqs'] or '–'}</td></tr>" for r in rows)
 
     # ---- leaderboard
-    lb = sorted(fin, key=lambda r: r["eval"]["sip"])[:10]
+    lb = sorted([r for r in fin if not r.get("ft_variant")], key=lambda r: r["eval"]["sip"])[:10]   # one row per pretrained model
 
     # ---- SOTA levers (recipe variations on a finished base) and ensembles of existing checkpoints
     by_tag = {r["tag"]: r for r in fin}
@@ -534,7 +539,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 </div>
 <div class="tablewrap"><table><thead><tr><th>model</th><th>data</th><th class="num">hours</th><th class="num">epochs</th><th class="num">seed</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{grows}</tbody></table></div>
 
-<h2>Leaderboard (all finished runs)</h2>
+<h2>Leaderboard (one row per pretrained model)</h2>
 <div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{lrows}</tbody></table></div>
 <p class="muted">Previous deliverable (2026-09-01, same S model and control data, in-RAM loader, original Nymeria files): {PREV_DELIVERABLE:.2f}.</p>
 
