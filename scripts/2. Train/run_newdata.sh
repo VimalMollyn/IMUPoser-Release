@@ -61,8 +61,9 @@ for spec in "$@"; do
   echo "[$(date -Is)] base done: $BEST"
 
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
-  # rebuild the model from env; the base-stage EPOCHS override must NOT (FT is always 60 ep)
-  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=' | grep -v '^$' | paste -sd' ' -)"
+  # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT
+  # (FT is always 60 ep, constant TF_LR=1e-4, on ftrain) so the FT recipe stays identical across arms
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
   if [ ! -f "$ftdir/best_model.txt" ]; then
     env MODEL=AvatarPoserModel TF_LR=1e-4 EPOCHS=60 TRAIN_COMBO=lw_rw_rp SEED=1 \

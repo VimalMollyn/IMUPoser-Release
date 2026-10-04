@@ -175,4 +175,16 @@ class AvatarPoserModel(pl.LightningModule):
             self.log(f"{loop}_loss", sum(outputs) / len(outputs), prog_bar=True, batch_size=self.batch_size)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        # LR_SCHED=cosine: anneal per epoch from TF_LR to TF_LR*LR_MIN_FRAC over the run (default: constant LR,
+        # the recipe every result before 2026-10-04 used). Pre-LN needs no warmup.
+        sched = os.environ.get("LR_SCHED", "").lower()
+        if sched in ("", "none", "const", "constant"):
+            return opt
+        if sched == "cosine":
+            T = int(self.trainer.max_epochs) if self.trainer is not None else int(os.environ.get("EPOCHS", "60"))
+            eta_min = self.lr * float(os.environ.get("LR_MIN_FRAC", "0.01"))
+            lr_s = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=T, eta_min=eta_min)
+            print(f"[lr] cosine schedule: {self.lr:g} -> {eta_min:g} over {T} epochs", flush=True)
+            return {"optimizer": opt, "lr_scheduler": {"scheduler": lr_s, "interval": "epoch"}}
+        raise ValueError(f"unknown LR_SCHED={sched!r} (use cosine or leave unset)")
