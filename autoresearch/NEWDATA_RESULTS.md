@@ -1,7 +1,9 @@
 # New motion data for lw_rw_rp @ 25 Hz — BONES-SEED + form-hoi + MotionMillion
 
-**Status: RUNNING (2026-10-02).** Results table at the bottom is filled in by `scripts/3. Evaluation/newdata_report.py`
-(the same script renders the results web page). Numbers below marked *pending* are not in yet.
+**Status: RUNNING (started 2026-10-02; campaign extended 2026-10-03 to a 48 h scaling + SOTA push).** The live
+results page (scaling laws, leaderboard, ablations, levers) is rendered by `scripts/3. Evaluation/newdata_report.py`
+into `autoresearch/newdata_report.html`; every finished run is also appended to `autoresearch/results.jsonl`.
+Section 5 below is a snapshot of the findings as of 2026-10-04 10:00 ET.
 
 ## 1. Question and design
 
@@ -76,14 +78,37 @@ Per dataset:
 
 *filled by the report script — see the web page.*
 
-## 5. Results
+## 5. Results (snapshot 2026-10-04 10:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
 
-*pending — see the web page / `checkpoints/newdata/ft_*/eval_dip_test.log`.*
+**Scaling (control data = curated-12 + Nymeria, 267 h).** Model size helps and then saturates: S (3.3 M) 60 ep
+16.55, M (10.9 M) 60 ep **16.32**, L (25.6 M) 60 ep **16.31**; at a 20-ep budget S 17.50/17.32, M 16.73, L 16.99
+(L needs the full schedule). Longer schedules do not help S (120 ep 16.73). Data helps: curated-12 only (35 h) is
+~1.3 worse than control at every size.
 
-| arm | seed | dip_test SIP | MPJRE | MPJPE |
-|---|---|---|---|---|
-| control | 1 | pending | | |
-| treatment | 1 | pending | | |
+**New data.** The first conversion of form-hoi / MotionMillion / MotionGV lerped axis-angle poses across the ±π wrap
+(accel spikes in 2–11 % of frames); every treatment result from it is invalid and was rerun after re-conversion
+in matrix space. With clean data: BONES-SEED helps the S model at 20 ep (control+BONES 16.73 vs 17.50/17.32) but
+is **neutral for the converged M model at 60 ep (16.46 vs 16.32)**: the extra motion acts as a regulariser under a
+short budget and does not move the asymptote. Corrected full-treatment runs (M 20 ep, S 60 ep), per-dataset
+ablations and MotionGV filtered vs unfiltered are in the queues.
+
+**Recipe levers on the best base.** Checkpoint averaging before FT: neutral (M 16.40, L 16.36). Inference windows
+longer than the 125-frame training window: much worse (no length extrapolation). Overlapping windows with averaged
+predictions (stride 31): free −0.1…−0.2 (L60 16.31 → 16.13, M60 16.32 → 16.21), selected on fval. Cosine LR in
+pretraining and an FT-recipe sweep (seed noise, lr, schedule, length) are running.
+
+**Best overall so far: 15.86** = fval-selected ensemble of four existing fine-tuned checkpoints (M60, L60,
+M60+BONES, S60; r6d-averaged) with stride-31 inference. −0.45 vs the best single model, −1.46 vs the previous
+deliverable (17.32), no new training.
+
+| model / data | 20 ep | 60 ep |
+|---|---|---|
+| S control | 17.50 / 17.32 (2 seeds) | 16.55 (120 ep: 16.73) |
+| M control | 16.73 | 16.32 |
+| L control | 16.99 | 16.31 |
+| S control + BONES-SEED | 16.73 | running |
+| M control + BONES-SEED | – | 16.46 |
+| S / M / L curated-12 | – | see page |
 
 ## 6. Caveats to keep honest
 
@@ -91,5 +116,8 @@ Per dataset:
 - The treatment epoch is ~2.5x more steps; the Nymeria compute-matched control (curated x174 ep = no gain)
   argues this is not a compute confound, but it was measured on a different data mix.
 - Shape: all new data uses the neutral SMPL body (betas = 0), like Nymeria.
-- MotionMillion's 30 fps -> 60 fps linear upsample (same as the existing Motion-X path) makes its synthetic
-  accel spikier than mocap-rate sources; accel magnitudes are ~3x Nymeria's on the dynamic subsets.
+- 30 fps sources (form-hoi, MotionMillion, MotionGV) are upsampled to 60 fps by interpolating rotations in
+  matrix space (`synth_imu.resample_pose_aa`); the original axis-angle lerp produced spikes across the ±π wrap and
+  invalidated the first treatment results. QC rule: under 0.2 % of frames with any sensor |acc| > 50 m/s².
+- Ensembles and stride-31 inference are reported separately from single-model numbers; all single-model
+  comparisons use the original 125-frame tiling.
