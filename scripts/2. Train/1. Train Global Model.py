@@ -113,6 +113,25 @@ checkpoint_callback = ModelCheckpoint(monitor="validation_step_loss", mode="min"
                                       save_last=True,
                                       filename='epoch={epoch}-val_loss={validation_step_loss:.5f}')
 
+# SNAPSHOT_EPOCHS="20,40": after epoch N (1-based) copy the best-so-far checkpoint to snap_epN.ckpt. With a
+# constant LR and a fixed seed the first N epochs of a long run ARE the N-epoch run, so one 60-epoch run also
+# yields the 20-epoch budget point (fine-tuned later via run_newdata.sh SNAPSHOT_FROM=<tag>:N).
+class _Snapshot(pl.Callback):
+    def __init__(self, epochs, ckpt_cb, dirpath):
+        self.epochs, self.ckpt_cb, self.dirpath = set(epochs), ckpt_cb, Path(dirpath)
+
+    def on_train_epoch_end(self, trainer, pl_module):   # fires after this epoch's validation + checkpointing
+        n = trainer.current_epoch + 1
+        if n in self.epochs and self.ckpt_cb.best_model_path:
+            import shutil
+            dst = self.dirpath / f"snap_ep{n}.ckpt"
+            shutil.copy(self.ckpt_cb.best_model_path, dst)
+            (self.dirpath / f"snap_ep{n}.txt").write_text(f"{self.ckpt_cb.best_model_path}\n")
+            print(f"[snapshot] epoch {n}: best so far {Path(self.ckpt_cb.best_model_path).name} -> {dst.name}", flush=True)
+
+_snap = [int(x) for x in os.environ.get("SNAPSHOT_EPOCHS", "").split(",") if x.strip()]
+_callbacks = [checkpoint_callback] + ([_Snapshot(_snap, checkpoint_callback, checkpoint_path)] if _snap else [])
+
 # NOTE: deterministic="warn" (not True): the bidirectional CuDNN LSTM backward has no
 # deterministic implementation, so deterministic=True raises at the first backward pass.
 # "warn" keeps the seeded run reproducible where possible and only warns on those ops.
@@ -124,7 +143,7 @@ _limit_tb = os.environ.get("LIMIT_TRAIN_BATCHES")
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=max_epochs,
                      accelerator="gpu", devices=gpus, strategy=strategy, precision=_precision,
                      limit_train_batches=(int(_limit_tb) if _limit_tb else 1.0), accumulate_grad_batches=_accum,
-                     callbacks=[checkpoint_callback], deterministic="warn")
+                     callbacks=_callbacks, deterministic="warn")
 
 # %%
 # RESUME_FROM=<last.ckpt> resumes optimizer + epoch/global_step (full Lightning resume),

@@ -50,9 +50,15 @@ for spec in "$@"; do
   # base checkpoint (FT-only variants: FT_LR / FT_EPOCHS / FT_SEED / FT_SCHED), so the base is trained once.
   getk(){ echo "${extra:-}" | tr ' ' '\n' | grep "^$1=" | tail -1 | cut -d= -f2-; }
   BASE_FROM="$(getk BASE_FROM)"; FT_LR="$(getk FT_LR)"; FT_EPOCHS="$(getk FT_EPOCHS)"; FT_SEED="$(getk FT_SEED)"; FT_SCHED="$(getk FT_SCHED)"
+  # SNAPSHOT_FROM=<tag>:<N>: fine-tune the epoch-N snapshot (snap_epN.ckpt, see SNAPSHOT_EPOCHS in the trainer) of
+  # another run = the N-epoch budget point of that run, without training it again
+  SNAPSHOT_FROM="$(getk SNAPSHOT_FROM)"; SNAP_EP=""
+  if [ -n "$SNAPSHOT_FROM" ]; then BASE_FROM="${SNAPSHOT_FROM%%:*}"; SNAP_EP="${SNAPSHOT_FROM##*:}"; fi
   echo "[$(date -Is)] START base_$tag arm=$arm seed=$seed gpu=$GPU"
   dir="$OUT/base_${BASE_FROM:-$tag}"; mkdir -p "$dir"
-  if [ -n "$BASE_FROM" ] && [ ! -f "$dir/best_model.txt" ]; then echo "BASE_FROM=$BASE_FROM has no finished base in $dir" >&2; exit 1; fi
+  if [ -n "$SNAP_EP" ]; then
+    [ -f "$dir/snap_ep$SNAP_EP.ckpt" ] || { echo "SNAPSHOT_FROM=$SNAPSHOT_FROM: no $dir/snap_ep$SNAP_EP.ckpt" >&2; exit 1; }
+  elif [ -n "$BASE_FROM" ] && [ ! -f "$dir/best_model.txt" ]; then echo "BASE_FROM=$BASE_FROM has no finished base in $dir" >&2; exit 1; fi
   if [ ! -f "$dir/best_model.txt" ]; then
     # an interrupted base run (killed for a drive swap, crash, ...) resumes from its last epoch checkpoint
     RESUME=""; [ -f "$dir/last.ckpt" ] && RESUME="$dir/last.ckpt" && echo "[$(date -Is)] resuming $tag from last.ckpt"
@@ -63,16 +69,18 @@ for spec in "$@"; do
         > "$dir/train.log" 2>&1
   fi
   BEST="$(head -1 "$dir/best_model.txt" 2>/dev/null)"; [ -f "$BEST" ] || BEST="$dir/last.ckpt"
+  [ -n "$SNAP_EP" ] && BEST="$dir/snap_ep$SNAP_EP.ckpt"
   echo "[$(date -Is)] base done: $BEST"
 
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
   # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT
   # (FT is always 60 ep, constant TF_LR=1e-4, on ftrain) so the FT recipe stays identical across arms
-  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^TF_WD=\|^BASE_FROM=\|^FT_' | grep -v '^$' | paste -sd' ' -)"
+  extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^TF_WD=\|^BASE_FROM=\|^SNAPSHOT_\|^FT_' | grep -v '^$' | paste -sd' ' -)"
   ftdir="$OUT/ft_$tag"; mkdir -p "$ftdir"
   if [ -n "$BASE_FROM$FT_LR$FT_EPOCHS$FT_SEED$FT_SCHED" ]; then
-    printf '{"base_from": "%s", "ft_lr": "%s", "ft_epochs": "%s", "ft_seed": "%s", "ft_sched": "%s"}\n' \
-      "${BASE_FROM:-$tag}" "${FT_LR:-1e-4}" "${FT_EPOCHS:-60}" "${FT_SEED:-1}" "${FT_SCHED:-const}" > "$ftdir/ft_meta.json"
+    printf '{"base_from": "%s", "ft_lr": "%s", "ft_epochs": "%s", "ft_seed": "%s", "ft_sched": "%s", "snapshot_epoch": %s, "snapshot_src": "%s"}\n' \
+      "${BASE_FROM:-$tag}" "${FT_LR:-1e-4}" "${FT_EPOCHS:-60}" "${FT_SEED:-1}" "${FT_SCHED:-const}" "${SNAP_EP:-null}" \
+      "$( [ -n "$SNAP_EP" ] && basename "$(head -1 "$dir/snap_ep$SNAP_EP.txt" 2>/dev/null)" )" > "$ftdir/ft_meta.json"
   fi
   if [ ! -f "$ftdir/best_model.txt" ]; then
     env MODEL=AvatarPoserModel TF_LR="${FT_LR:-1e-4}" EPOCHS="${FT_EPOCHS:-60}" TRAIN_COMBO=lw_rw_rp SEED="${FT_SEED:-1}" \

@@ -220,7 +220,15 @@ def collect_runs():
             continue
         d = CK / f"base_{meta['base_from']}"
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
-        runs.append(dict(mk_run(tag, d, base), ft_variant=True))   # same pretrained model, FT recipe varied
+        snap = meta.get("snapshot_epoch")
+        if snap:   # the epoch-N snapshot of a longer run = that run's N-epoch budget point (a distinct model, not an FT variant)
+            m = re.search(r"epoch=(\d+)-val_loss=validation_step_loss=(\d+\.\d+)", meta.get("snapshot_src") or "")
+            base = dict(base, epochs_done=min(base.get("epochs_done", 0), snap), status="done",
+                        val={e: v for e, v in base.get("val", {}).items() if e < snap},
+                        **({"best_epoch": int(m.group(1)), "best_val": float(m.group(2))} if m else {}))
+            runs.append(mk_run(tag, d, base))
+        else:
+            runs.append(dict(mk_run(tag, d, base), ft_variant=True))   # same pretrained model, FT recipe varied
     for d in sorted(CK.glob("base_*")):
         tag = d.name[5:]
         base = parse_train_log(d / "train.log") or {"status": "pending", "val": {}, "epochs_done": 0}
