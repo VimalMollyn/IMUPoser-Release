@@ -118,7 +118,15 @@ class IMUPoserDataModule(pl.LightningDataModule):
         print("Done with setup")
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=int(os.environ.get("NUM_WORKERS", "8")), shuffle=True)
+        nw = int(os.environ.get("NUM_WORKERS", "8"))
+        w = getattr(self.train_dataset, "sampler_weights", None)
+        if w is not None:   # fractional DATASET_REPEAT: draw windows with replacement, probability ~ weight, re-drawn each epoch
+            from torch.utils.data import WeightedRandomSampler
+            import torch as _t
+            g = _t.Generator(); g.manual_seed(int(os.environ.get("SEED", "42")))
+            sampler = WeightedRandomSampler(_t.as_tensor(w, dtype=_t.double), num_samples=int(round(float(w.sum()))), replacement=True, generator=g)
+            return DataLoader(self.train_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=nw, sampler=sampler)
+        return DataLoader(self.train_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=nw, shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.config.batch_size, collate_fn=pad_seq, num_workers=int(os.environ.get("NUM_WORKERS", "8")), shuffle=False)

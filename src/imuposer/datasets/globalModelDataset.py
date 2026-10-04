@@ -190,7 +190,7 @@ class GlobalModelDataset(Dataset):
         # >1 repeats that dataset's windows (sampled more often per epoch), <1 keeps a deterministic fraction.
         # Lets a data mix emphasise DIP-like motion without discarding the rest. Default 1 for everything.
         _rep = {}
-        for kv in os.environ.get("DATASET_REPEAT", "").split(","):
+        for kv in (os.environ.get("DATASET_REPEAT", "") if self.apply_fraction else "").split(","):   # training set only
             if "=" in kv:
                 k, v = kv.split("="); _rep[k.strip()] = float(v)
         def _repeat_for(name):
@@ -210,6 +210,12 @@ class GlobalModelDataset(Dataset):
         if self.apply_fraction and os.environ.get("DATASET_KEEP"):
             import json as _json
             keep = {k: set(v) for k, v in _json.load(open(os.environ["DATASET_KEEP"])).items()}
+        # Integer repeats duplicate windows (each drawn exactly k times per epoch, deterministic like the plain
+        # loader). A FRACTIONAL repeat (DATASET_REPEAT=MM_=0.5) must not freeze one fixed half of the windows: it
+        # becomes a per-window sampling weight for a WeightedRandomSampler (see IMUPoserDataModule), so every
+        # window stays in the pool and is drawn with probability proportional to its weight, re-drawn each epoch.
+        weighted = any(abs(v - round(v)) > 1e-9 for v in _rep.values())
+        wts = []
         self.stores = []
         starts, lens, sids = [], [], []
         j = 0
@@ -234,14 +240,19 @@ class GlobalModelDataset(Dataset):
                 # identical windowing to torch.split(seq, window_length): full windows + a shorter tail
                 for s in range(0, L, window_length):
                     k += 1
+                    if weighted:
+                        starts.append(b + s); lens.append(min(window_length, L - s)); sids.append(sid); wts.append(rep)
+                        continue
                     n_copies = int(rep) + (1 if (rep - int(rep)) > 0 and (k * 0.6180339887) % 1.0 < (rep - int(rep)) else 0)
                     for _ in range(n_copies):
                         starts.append(b + s)
                         lens.append(min(window_length, L - s))
                         sids.append(sid)
                 b += L
+        self.sampler_weights = np.asarray(wts, dtype=np.float64) if weighted else None
         if _rep:
-            print(f"[stream] DATASET_REPEAT applied: {_rep}", flush=True)
+            print(f"[stream] DATASET_REPEAT applied: {_rep}" + (f" as sampling weights ({len(wts)} windows in the pool, "
+                  f"{int(round(sum(wts)))} draws per epoch)" if weighted else " as window repeats"), flush=True)
         if frac < 1:
             print(f"[stream] DATASET_FRACTION={frac:g}: kept {kept_frames / self.fps / 3600:.1f} h of unique motion "
                   f"({j} sequences -> windows repeated x{1 / frac:g})", flush=True)
