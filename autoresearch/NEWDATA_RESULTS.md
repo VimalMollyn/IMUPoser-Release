@@ -87,19 +87,22 @@ Per dataset:
 
 **New data.** The first conversion of form-hoi / MotionMillion / MotionGV lerped axis-angle poses across the ±π wrap
 (accel spikes in 2–11 % of frames); every treatment result from it is invalid and was rerun after re-conversion
-in matrix space. With clean data: BONES-SEED helps the S model at 20 ep (control+BONES 16.73 vs 17.50/17.32) but
-is **neutral for the converged M model at 60 ep (16.46 vs 16.32)**: the extra motion acts as a regulariser under a
-short budget and does not move the asymptote. Corrected full-treatment runs (M 20 ep, S 60 ep), per-dataset
-ablations and MotionGV filtered vs unfiltered are in the queues.
+in matrix space. With clean data: BONES-SEED alone helps the S model at 20 ep (control+BONES 16.73 vs 17.50/17.32)
+but is neutral once trained to convergence (S60 16.72 vs 16.55; M60 16.46 vs 16.32). **The FULL new-data mix does
+help the M model: M 20 ep on treatment (676 h) = 16.30 vs 16.73 on control (−0.43, 2.5× the noise), tying the best
+60-ep models at a third of the epochs** (2026-10-04 13:50). M 60 ep on treatment is running (SOTA candidate; the
+40-ep snapshot gives a second point). Still queued: S60 treatment, mixing ratio (new data ×0.25/×0.5/×2), a
+DIP-like subset of the new data (186 of 409 h), the 13 leftover AMASS sets, a treatment→control curriculum,
+MotionGV filtered / unfiltered / DIP-like (256 of 636 h).
 
 **Recipe levers on the best base.** Checkpoint averaging before FT: neutral (M 16.40, L 16.36). Inference windows
 longer than the 125-frame training window: much worse (no length extrapolation). Overlapping windows with averaged
 predictions (stride 31): free −0.1…−0.2 (L60 16.31 → 16.13, M60 16.32 → 16.21), selected on fval. Cosine LR in
 pretraining and an FT-recipe sweep (seed noise, lr, schedule, length) are running.
 
-**Best overall so far: 15.86** = fval-selected ensemble of four existing fine-tuned checkpoints (M60, L60,
-M60+BONES, S60; r6d-averaged) with stride-31 inference. −0.45 vs the best single model, −1.46 vs the previous
-deliverable (17.32), no new training.
+**Best overall so far: 15.78** = fval-selected ensemble of five existing fine-tuned checkpoints (M60, L60,
+M60+BONES, S60, M20-treatment; r6d-averaged) with stride-31 inference. −0.53 vs the best single model, −1.54 vs
+the previous deliverable (17.32), no new training. The 3-member M60 + L60 + M20-treatment ensemble gets 15.79.
 
 | model / data | 20 ep | 60 ep |
 |---|---|---|
