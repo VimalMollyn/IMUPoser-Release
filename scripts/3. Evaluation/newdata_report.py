@@ -448,7 +448,7 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 
 <h2>Which datasets help? (control + one group, S model, 20 epochs)</h2>
 <div class="tablewrap"><table><thead><tr><th>pretraining data</th><th class="num">seed</th><th class="num">hours</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{arows}</tbody></table></div>
-<p class="muted">MotionGV (MotionMillion's video-estimated part) is tested two ways: filtered (5-frame moving average at 30 fps, clips of at least 2 s, clip dropped if any sensor acceleration exceeds 120 m/s²; 301 h kept of ~700) and unfiltered (clips of at least 1 s, no smoothing, no cap).</p>
+<p class="muted">MotionGV (MotionMillion's video-estimated part) is tested two ways: filtered (5-frame moving average at 30 fps, clips of at least 2 s, clip dropped if any sensor acceleration exceeds 120 m/s²; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV filtered')), '–')} kept) and unfiltered (clips of at least 1 s, no smoothing, no cap; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV unfiltered')), '–')}). After the interpolation fix both have under 0.1 percent of frames above 50 m/s².</p>
 
 <h2>What was trained on</h2>
 {svg_stack(rows)}
