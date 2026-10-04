@@ -170,6 +170,42 @@ def lever_ref(tag):
     return None
 
 
+DIPLIKE_CSV = LOGS / "diplike_stats.csv"
+DIPLIKE_GROUPS = [("DIP train (reference)", "dip_train"), ("curated AMASS: CMU", "CMU"), ("curated AMASS: BMLrub", "BioMotionLab"),
+                  ("curated AMASS: KIT", "KIT"), ("Nymeria", "Nymeria_"), ("BONES-SEED", "BONES_"), ("form-hoi", "FORMHOI_"),
+                  ("MotionMillion mocap", "MM_"), ("Motion-X", "MotionX_"), ("MotionGV filtered (sample)", "MGV_"),
+                  ("MotionGV unfiltered (sample)", "MGVRAW_"), ("leftover AMASS", None)]
+
+
+def diplike_table():
+    """Per dataset group: hours, hours-weighted distance of sequences from DIP's mean pose, accel p95, diversity."""
+    import csv as _csv
+    txt = read(DIPLIKE_CSV)
+    if not txt:
+        return []
+    rows = list(_csv.DictReader(txt.splitlines()))
+    ref = read(LOGS / "diplike_ref.csv")            # the reference's own sequences (written by a separate run)
+    if ref:
+        rows += [r for r in _csv.DictReader(ref.splitlines()) if r["dataset"] == "dip_train"]
+    out = []
+    for label, pre in DIPLIKE_GROUPS:
+        rs = [r for r in rows if (pre and r["dataset"].startswith(pre))]
+        if not rs:
+            continue
+        fr = [float(r["frames"]) for r in rs]; H = sum(fr) / 25 / 3600
+        def wq(key, q):
+            v = sorted(zip([float(r[key]) for r in rs], fr))
+            c, tot = 0.0, sum(fr)
+            for x, w in v:
+                c += w
+                if c >= q * tot: return x
+            return v[-1][0]
+        out.append({"group": label, "hours": H, "seqs": len(rs), "dist50": wq("dist_deg", .5), "dist90": wq("dist_deg", .9),
+                    "acc95": wq("acc95", .5), "div": wq("div_deg", .5), "static": sum(float(r["static_frac"]) * w for r, w in zip(rs, fr)) / sum(fr),
+                    "near": sum(w for r, w in zip(rs, fr) if float(r["dist_deg"]) <= 20) / sum(fr)})
+    return out
+
+
 def results_rows(kind):
     out = []
     for line in read(REPO / "autoresearch" / "results.jsonl").splitlines():
@@ -462,6 +498,12 @@ def build(out_path):
     arows = "".join(f"<tr><td>{r['arm'].rstrip('+')} {html.escape(r['extra']) if r['extra'] else '(reference)'}</td><td class='num'>{r['seed']}</td><td class='num'>{fmt(r['hours'],0)}</td><td>{row_status(r)}</td>"
                     f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjre'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjpe'])}</td></tr>" for r in abl)
 
+    # ---- distance from DIP per dataset group (diplike_select.py)
+    dl = diplike_table()
+    dl_rows = "".join(f"<tr><td>{html.escape(r['group'])}</td><td class='num'>{r['hours']:.0f}</td><td class='num'>{r['seqs']}</td>"
+                      f"<td class='num'>{r['dist50']:.1f}</td><td class='num'>{r['dist90']:.1f}</td><td class='num'>{r['near']*100:.0f} %</td>"
+                      f"<td class='num'>{r['div']:.1f}</td><td class='num'>{r['acc95']:.1f}</td><td class='num'>{r['static']*100:.0f} %</td></tr>" for r in dl)
+
     # ---- data table
     drows = "".join(f"<tr><td>{html.escape(r['group'])}</td><td class='num'>{r['files']}</td><td class='num'>{r['hours']:.1f}</td><td class='num'>{r['seqs'] or '–'}</td></tr>" for r in rows)
 
@@ -574,6 +616,10 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <h2>Which datasets help? (control + one group, S model, 20 epochs)</h2>
 <div class="tablewrap"><table><thead><tr><th>pretraining data</th><th class="num">seed</th><th class="num">hours</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{arows}</tbody></table></div>
 <p class="muted">MotionGV (MotionMillion's video-estimated part) is tested two ways: filtered (5-frame moving average at 30 fps, clips of at least 2 s, clip dropped if any sensor acceleration exceeds 120 m/s²; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV filtered')), '–')} kept) and unfiltered (clips of at least 1 s, no smoothing, no cap; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV unfiltered')), '–')}). After the interpolation fix both have under 0.1 percent of frames above 50 m/s².</p>
+
+<h3>How far is each dataset from DIP?</h3>
+<p>Per sequence, from the packed shards: the angular distance between the sequence's mean local joint rotation and DIP-train's mean pose (heading-invariant; median and 90th percentile, weighted by hours), the share of hours within 20° of DIP (DIP's own sequences sit at a median of 10° and a maximum of 21°), the sequence's own pose diversity, the 95th-percentile sensor acceleration and the share of near-static frames. Earlier, WHIP (sports) hurt and Nymeria (everyday motion) helped, and distribution rather than quality was the explanation; this table applies the same lens to the new sources and to the leftover AMASS sets, and is the basis of the DIP-like selection rule tested in the ablations.</p>
+<div class="tablewrap"><table><thead><tr><th>dataset</th><th class="num">hours</th><th class="num">sequences</th><th class="num">dist. to DIP, median °</th><th class="num">p90 °</th><th class="num">within 20°</th><th class="num">diversity °</th><th class="num">acc p95 m/s²</th><th class="num">static</th></tr></thead><tbody>{dl_rows}</tbody></table></div>
 
 <h2>What was trained on</h2>
 {svg_stack(rows)}

@@ -84,7 +84,9 @@ def main():
     prefixes = [p for p in a.prefixes.split(",") if p]
     dirs = sorted(d for d in SH.iterdir() if d.is_dir() and any(d.name.startswith(p) for p in prefixes)
                   and (d / "meta.json").exists())
-    rows, keep = [], {}
+    # the reference's own sequences go into the csv too (distance to the pooled DIP mean), for the report's first row
+    rows = [(a.ref, r[0], r[1], d, r[3], r[4], r[5]) for r, d in zip(ref_rows, ref_d)]
+    keep = {}
     for d in dirs:
         kept = []
         for si, L, dist, div, acc95, stat, _ in seq_stats(d, dev, ref_mean):
