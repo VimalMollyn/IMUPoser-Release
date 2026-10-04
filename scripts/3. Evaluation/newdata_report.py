@@ -124,7 +124,7 @@ def size_label(n):
 def arm_label(tag):
     t = tag.lower()
     if "+gv" in t or "_gv_" in t or t.startswith("gv") and "trt" in t: return "treatment+GV"
-    if t.startswith("gvfilt") or t.startswith("gvraw") or t.startswith("abl_"): return "control+"
+    if t.startswith("gvfilt") or t.startswith("gvraw") or t.startswith("gvdl") or t.startswith("abl_"): return "control+"
     if "_cur" in t: return "curated-12"
     if "_ctrl" in t or t.startswith("control"): return "control"
     if "_trt" in t or t.startswith("treatment"): return "treatment"
@@ -138,7 +138,7 @@ def budget_of(tag, base):
 
 
 EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
-                ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"),
+                ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"), ("gvdl20", "+ MotionGV, DIP-like subset (256 h)"),
                 ("treatment_rew", "reweighted: form-hoi ×3, Nymeria ×2, BONES/MM/Motion-X ×0.5"),
                 ("curr_trt2ctrl", "curriculum: treatment (676 h, 60 ep) -> 20 ep on control"),
                 ("mix025", "treatment, new data sampled ×0.25 per epoch"), ("mix050", "treatment, new data sampled ×0.5 per epoch"),
@@ -611,9 +611,10 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 
 <h2>Does the new motion data help the S model? (the original question)</h2>
 <div class="tablewrap"><table><thead><tr><th>arm</th><th class="num">seed</th><th class="num">hours</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{tc_rows}</tbody></table></div>
-<div class="grid2"><div><h3>Validation loss during pretraining</h3>{curve}</div><div class="panel"><h3 style="margin-top:0">Reading it</h3><p>Validation loss is on real DIP training windows and selects the pretrain checkpoint; it is not the test metric. The treatment arm reaches lower validation loss while its interim dip_test is worse, the pattern seen before with WHIP: extra motion that is far from DIP's everyday distribution (dance, combat, two-person interaction, stylized locomotion) pulls the model off DIP's manifold even as it fits DIP-train windows better.</p></div></div>
+<div class="grid2"><div><h3>Validation loss during pretraining</h3>{curve}</div><div class="panel"><h3 style="margin-top:0">Reading it</h3><p>Validation loss is on real DIP training windows and selects the pretrain checkpoint; it is not the test metric. With the corrected conversion, the clean picture so far is budget-dependent: BONES-SEED helps the S model at a 20-epoch budget but not at 60 epochs, and not the M model at 60 epochs. Extra motion acts as a regulariser while the model is under-trained and has not yet moved the converged asymptote. The arms below (full corrected treatment, mixing ratio, DIP-like selection, the leftover AMASS sets, a broad-to-narrow curriculum, MotionGV filtered / raw / DIP-like) test whether a different way of adding data changes that.</p></div></div>
 
-<h2>Which datasets help? (control + one group, S model, 20 epochs)</h2>
+<h2>Which data, and how to add it? (S model, 20 epochs unless noted)</h2>
+<p>Each row changes one thing about the pretraining data relative to the reference (control, S, 20 epochs). "Sampled ×k per epoch" keeps every sequence but changes how often the new data is drawn (×1 is the natural ratio, about 60 percent of windows); the DIP-like subset keeps only sequences within 20° of DIP's mean pose with moderate accelerations and some motion (186 of the 409 new hours; 256 of the 636 MotionGV hours); the curriculum pretrains on everything and then narrows back to control before the DIP fine-tune.</p>
 <div class="tablewrap"><table><thead><tr><th>pretraining data</th><th class="num">seed</th><th class="num">hours</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{arows}</tbody></table></div>
 <p class="muted">MotionGV (MotionMillion's video-estimated part) is tested two ways: filtered (5-frame moving average at 30 fps, clips of at least 2 s, clip dropped if any sensor acceleration exceeds 120 m/s²; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV filtered')), '–')} kept) and unfiltered (clips of at least 1 s, no smoothing, no cap; {next((f"{r['hours']:.0f} h" for r in rows if r['group'].startswith('MotionGV unfiltered')), '–')}). After the interpolation fix both have under 0.1 percent of frames above 50 m/s².</p>
 
