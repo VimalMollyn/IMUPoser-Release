@@ -124,7 +124,7 @@ def size_label(n):
 def arm_label(tag):
     t = tag.lower()
     if "+gv" in t or "_gv_" in t or t.startswith("gv") and "trt" in t: return "treatment+GV"
-    if t.startswith("gvfilt") or t.startswith("gvraw") or t.startswith("gvdl") or t.startswith("abl_"): return "control+"
+    if t.startswith(("gvfilt", "gvraw", "gvdl", "gvrand", "abl_", "dlall")): return "control+"
     if "_cur" in t: return "curated-12"
     if "_ctrl" in t or t.startswith("control"): return "control"
     if "_trt" in t or t.startswith("treatment"): return "treatment"
@@ -138,7 +138,10 @@ def budget_of(tag, base):
 
 
 EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
-                ("gvfilt", "+ MotionGV filtered"), ("gvraw", "+ MotionGV unfiltered"), ("gvdl20", "+ MotionGV, DIP-like subset (256 h)"),
+                ("gvfilt", "+ MotionGV filtered (all 636 h)"), ("gvraw", "+ MotionGV unfiltered (724 h)"), ("gvdl20", "+ MotionGV, DIP-like subset (within 20°, 256 h)"),
+                ("gvdl15", "+ MotionGV, DIP-like subset (within 15°)"), ("gvdl25", "+ MotionGV, DIP-like subset (within 25°)"),
+                ("gvrand", "+ MotionGV, RANDOM subset of 256 h (control for the selection)"),
+                ("dlall", "control + DIP-like subsets of the new data AND MotionGV"),
                 ("treatment_rew", "reweighted: form-hoi ×3, Nymeria ×2, BONES/MM/Motion-X ×0.5"),
                 ("curr_trt2ctrl", "curriculum: treatment (676 h, 60 ep) -> 20 ep on control"),
                 ("mix025", "treatment, new data sampled ×0.25 per epoch"), ("mix050", "treatment, new data sampled ×0.5 per epoch"),
@@ -442,7 +445,7 @@ def build(out_path):
     # ---- headline
     if best:
         head = (f"Best single model so far: dip_test SIP {best['eval']['sip']:.2f} "
-                f"({best['size']} model, {best['params']/1e6:.1f} M params, {best['arm']}{' ' + best['extra'] if best['extra'] else ''}, "
+                f"({best['size']} model, {best['params']/1e6:.1f} M params, {best['arm'].rstrip('+')}{' ' + best['extra'] if best['extra'] else ''}, "
                 f"{best['hours']:.0f} h, {best['budget']} epochs). Previous deliverable: {PREV_DELIVERABLE:.2f}.")
     else:
         head = "No finished run yet."
