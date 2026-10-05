@@ -22,6 +22,9 @@ def _kmeans(x, k, iters=25, seed=0):
                 c[j] = x[m].mean(0)
     return labels
 
+_ACC_CLAMP = float(os.environ.get("ACC_CLAMP", "0") or 0)
+
+
 class GlobalModelDataset(Dataset):
     r"""
     Each training sample is a (window, IMU-combo) pair: every windowed sequence is
@@ -279,7 +282,13 @@ class GlobalModelDataset(Dataset):
         """-> (acc (W,5,3) scaled, ori (W,5,3,3), pose (W,216) rotation matrices flattened, store, start, len)."""
         st = self.stores[int(self.win_store[window_idx])]
         s, L = int(self.win_start[window_idx]), int(self.win_len[window_idx])
-        acc = st.read("acc", s, L) / self.config.acc_scale
+        acc = st.read("acc", s, L)
+        # ACC_CLAMP=<m/s^2>: cap the synthetic acceleration at a real sensor's range (a 16 g IMU saturates at ~157).
+        # Synthetic accel from mocap has outliers of 200-2000 m/s^2 (Nymeria: 0.09 % of frames, MotionMillion a few)
+        # that real data never shows (DIP max 50) and that destabilise the larger models. Off by default.
+        if _ACC_CLAMP > 0:
+            acc = acc.clamp_(-_ACC_CLAMP, _ACC_CLAMP)
+        acc = acc / self.config.acc_scale
         ori = st.read("ori", s, L)
         aa = st.read("pose_aa", s, L)
         pose = math.axis_angle_to_rotation_matrix(aa.reshape(-1, 3)).reshape(L, -1)

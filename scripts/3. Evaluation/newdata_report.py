@@ -156,6 +156,7 @@ EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
 LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (r"_cos$", "cosine LR schedule in pretraining"),
                 (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
+                (r"_stab$", "grad-norm clip 1.0 + synthetic accel clamped to ±160 m/s² (the L/XL stability settings)"),
                 (r"^ftseed(\d+)_", "FT seed {0} (FT-stage noise)"), (r"^ftlr5e5_", "FT lr 5e-5"), (r"^ftlr2e4_", "FT lr 2e-4"),
                 (r"^ftcos120_", "FT cosine LR, 120 ep"), (r"^ftcos_", "FT cosine LR"), (r"^ft120_", "FT 120 ep")]
 
@@ -171,6 +172,7 @@ def lever_ref(tag):
     """The plain run a lever run should be compared with."""
     if tag.endswith("_cos"): return tag[:-4]
     if tag.endswith("_wd1e2"): return tag[:-6]
+    if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("swa_"): return "scale_" + tag[4:]
     m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
     if m: return "scale_" + m.group(1)

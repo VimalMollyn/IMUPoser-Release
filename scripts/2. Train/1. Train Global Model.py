@@ -140,10 +140,16 @@ strategy = "ddp" if len(gpus) > 1 else "auto"
 # scaling on the Volta/Pascal tensor cores). LIMIT_TRAIN_BATCHES: cap steps/epoch (benchmarking only).
 _precision = os.environ.get("PRECISION", "32-true")
 _limit_tb = os.environ.get("LIMIT_TRAIN_BATCHES")
+# GRAD_CLIP=<norm>: clip the global gradient norm (off by default = every result before 2026-10-05). The L model
+# (25.6 M) at 3e-4 showed 25-30x loss spikes (L60-control step 11799, L20 on 709 h step 5749) that M never did;
+# pairs with ACC_CLAMP in the loader (synthetic accel capped at a real sensor's range).
+_clip = float(os.environ.get("GRAD_CLIP", "0") or 0)
+if _clip or os.environ.get("ACC_CLAMP"):
+    print(f"[stab] GRAD_CLIP={_clip or 'off'} ACC_CLAMP={os.environ.get('ACC_CLAMP', 'off')} m/s^2", flush=True)
 trainer = pl.Trainer(fast_dev_run=fast_dev_run, logger=wandb_logger, max_epochs=max_epochs,
                      accelerator="gpu", devices=gpus, strategy=strategy, precision=_precision,
                      limit_train_batches=(int(_limit_tb) if _limit_tb else 1.0), accumulate_grad_batches=_accum,
-                     callbacks=_callbacks, deterministic="warn")
+                     gradient_clip_val=(_clip or None), callbacks=_callbacks, deterministic="warn")
 
 # %%
 # RESUME_FROM=<last.ckpt> resumes optimizer + epoch/global_step (full Lightning resume),
