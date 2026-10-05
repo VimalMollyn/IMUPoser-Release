@@ -78,7 +78,15 @@ Per dataset:
 
 *filled by the report script — see the web page.*
 
-## 5. Results (snapshot 2026-10-04 10:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
+## 5. Results (snapshot 2026-10-05 14:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
+
+**Headline (2026-10-05).** Selecting data by closeness to DIP beats adding hours. On the S model at 20 epochs,
+control + ALL of MotionGV filtered (636 h) = 17.06, control + a RANDOM 256 h of it = 16.80, control + the 256 h
+within 20° of DIP's mean pose (moderate accel, non-static) = **16.04**; threshold sweep 15° (61 h) 16.96, 20° 16.04,
+25° (347 h) 16.20. Unfiltered MotionGV (724 h, no smoothing) = 16.57 beats the filtered set: the smoothing hurt.
+The M model at 20 epochs on control + DIP-like mocap (186 h) + DIP-like GV (256 h) = **16.04 (15.94 with
+overlapping inference windows)**, the best single model; M on the full 676 h treatment = 16.30 at 20 AND 60 epochs
+(the model converges by epoch 15 on that much data). Best overall: fval-selected 7-member ensemble = **15.65**.
 
 **Scaling (control data = curated-12 + Nymeria, 267 h).** Model size helps and then saturates: S (3.3 M) 60 ep
 16.55, M (10.9 M) 60 ep **16.32**, L (25.6 M) 60 ep **16.31**; at a 20-ep budget S 17.50/17.32, M 16.73, L 16.99
