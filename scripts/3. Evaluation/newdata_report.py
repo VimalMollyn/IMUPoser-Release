@@ -497,7 +497,7 @@ def build(out_path):
     c60 = [r for r in fin if r["arm"] == "control" and r["size"] == "S" and r["budget"] == 60 and not r["extra"]]
     t60 = [r for r in fin if r["arm"] == "treatment" and r["size"] == "S" and r["budget"] == 60 and not r["extra"]]
     interim = [r for r in runs if r.get("interim")]
-    tc_rows = "".join(f"<tr><td>{r['arm']}{' <span class=\"chip wait\">interim</span>' if r.get('interim') else ''}</td><td class='num'>{r['seed']}</td><td class='num'>{fmt(r['hours'],0)}</td><td>{row_status(r)}</td>"
+    tc_rows = "".join(f"<tr><td>{(html.escape(r['tag']) + ' <span class=\"chip wait\">interim read-out</span>') if r.get('interim') else r['arm']}</td><td class='num'>{r['seed']}</td><td class='num'>{fmt(r['hours'],0)}</td><td>{row_status(r)}</td>"
                       f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjre'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjpe'])}</td></tr>"
                       for r in sorted([r for r in runs if r["size"] == "S" and r["budget"] in (60,) and r["arm"] in ("control", "treatment") and not r["extra"]] + interim, key=lambda r: (r["arm"], r["seed"], bool(r.get("interim")))))
     curve_series = []
