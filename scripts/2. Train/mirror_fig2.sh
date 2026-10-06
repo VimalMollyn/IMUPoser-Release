@@ -14,6 +14,9 @@ while true; do
   rsync -a -e "$SSH" --include='*/' --include='train.log' --include='best_model.txt' --include='eval_dip_test.log' \
         --include='ft_meta.json' --include='snap_*.txt' --exclude='*' --prune-empty-dirs \
         "$SRC" "$DST" 2>>"$LOGS/mirror_fig2.err" || echo "[$(date -Is)] rsync failed" >> "$LOGS/mirror_fig2.err"
-  rsync -a -e "$SSH" "$FIG2:/media/vimal/Taejun4TB/vimal_imuposer/imuposer_data/logs/queue_fig2_gpu*.log" "$LOGS/" 2>>"$LOGS/mirror_fig2.err"
+  # no remote globs: fig2's login shell is fish, which aborts on an unmatched wildcard; filter on the receiving side
+  rsync -a -e "$SSH" --include='queue_fig2_gpu*.log' --exclude='*' \
+        "$FIG2:/media/vimal/Taejun4TB/vimal_imuposer/imuposer_data/logs/" "$LOGS/" 2>>"$LOGS/mirror_fig2.err"
+  [ -n "${ONCE:-}" ] && exit 0
   sleep 600
 done
