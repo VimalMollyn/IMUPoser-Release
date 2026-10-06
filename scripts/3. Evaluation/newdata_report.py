@@ -188,7 +188,8 @@ def lever_ref(tag):
     if tag.endswith("_wd1e2"): return tag[:-6]
     if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
-    if tag.startswith("swa_"): return "scale_" + tag[4:]
+    if tag.startswith("swa_"):   # swa_<run>: the run is scale_<run> for the size grid, else the bare tag (control_s1, ...)
+        return "scale_" + tag[4:] if (CK / f"base_scale_{tag[4:]}").exists() else tag[4:]
     m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
     if m: return "scale_" + m.group(1)
     return None
@@ -592,6 +593,22 @@ def build(out_path):
         for m in stride["fval"]:
             stride_rows += f"<tr><td>{m} · fval</td>" + "".join(f"<td class='num'>{fmt(stride['fval'][m].get(s))}</td>" for s in ss) + "</tr>"
             stride_rows += f"<tr><td>{m} · dip_test</td>" + "".join(f"<td class='num'><b>{fmt(stride['dip_test'][m].get(s))}</b></td>" if stride['dip_test'][m].get(s) is not None else "<td class='num muted'>–</td>" for s in ss) + "</tr>"
+    # ---- checkpoint averaging, zero-shot: the averaged run against its plain source run (same training run, no extra compute)
+    def dcell(v):
+        return "<td class='num muted'>–</td>" if v is None else f"<td class='num' style='color:{'#1a7f37' if v < 0 else '#b42318'}'>{v:+.2f}</td>"
+    avg_rows = ""
+    for r in sorted((x for x in zfin if x["tag"].startswith("swa_")), key=lambda x: x["zs"]["sip"]):
+        ref = by_tag.get(lever_ref(r["tag"]) or "")
+        rz = ref.get("zs") if ref else None
+        avg_rows += (f"<tr><td class='mono'>{html.escape(lever_ref(r['tag']) or '–')}</td><td>{r['size']} {fmt((r['params'] or 0)/1e6, 1)} M</td><td class='num'>{r['budget']}</td>"
+                     f"<td class='num'>{fmt(rz and rz['sip'])}</td><td class='num'><b>{r['zs']['sip']:.2f}</b></td>{dcell(rz and r['zs']['sip'] - rz['sip'])}"
+                     f"<td class='num'>{fmt(rz and rz['mpvpe'])}</td><td class='num'><b>{r['zs']['mpvpe']:.2f}</b></td>{dcell(rz and r['zs']['mpvpe'] - rz['mpvpe'])}</tr>")
+    # ---- choices made ON this dataset (ensembles, evaluation settings): selected on participants 1-2, reported on participants 3-10
+    split_rows = ""
+    for r in sorted(results_rows("zs_split"), key=lambda x: x.get("test8_sip") or 99):
+        split_rows += (f"<tr><td>{html.escape(r.get('label', r.get('name', '')))}</td><td class='num'>{fmt(r.get('sel_sip'))}</td><td class='num'>{fmt(r.get('sel_mesh'))}</td>"
+                       f"<td class='num'><b>{fmt(r.get('test8_sip'))}</b></td><td class='num'>{fmt(r.get('test8_mpjre'))}</td><td class='num'>{fmt(r.get('test8_mpjpe'))}</td>"
+                       f"<td class='num'><b>{fmt(r.get('test8_mesh'))}</b></td><td class='num'>{fmt(r.get('test8_mpjve'), 1)}</td><td class='num'>{fmt(r.get('test8_jitter'), 0)}</td></tr>")
     # ---- zero-shot on the collected IMUPoser dataset (real phone/watch/head IMU, 10 participants)
     zs = results_rows("imuposer_zs")
     zs_by = {}
@@ -666,6 +683,12 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 </div>
 <div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>pretraining data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">SIP ° + TTO</th><th class="num">mesh cm</th><th class="num">mesh cm + TTO</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th><th class="num">SIP ° after DIP FT</th><th class="num">dip_test SIP ° (FT)</th></tr></thead><tbody>{zrows}</tbody></table></div>
 <p class="muted">Reference from the paper's own camera-ready results on this dataset (its DIP-fine-tuned LSTM, left wrist + right wrist + right pocket, averaged without end effectors, which is also what the evaluator here ignores): global angular error 22.21°, positional error 8.56 cm, mesh error 10.12 cm (with end effectors: 21.72°, 9.46 cm, 11.39 cm). The paper did not report SIP or a velocity error on this set.</p>
+<h3>Checkpoint averaging (zero-shot)</h3>
+<p>Uniform average of the three best-by-validation checkpoints a run saved, scored zero-shot against the run's single best checkpoint. Same training run, no extra compute. It was neutral on the DIP benchmark after fine-tuning, and it helps transfer to the real-device dataset at every model size and schedule tried.</p>
+<div class="tablewrap"><table><thead><tr><th>source run</th><th>model</th><th class="num">ep</th><th class="num">SIP ° best ckpt</th><th class="num">SIP ° averaged</th><th class="num">Δ</th><th class="num">mesh cm best ckpt</th><th class="num">mesh cm averaged</th><th class="num">Δ</th></tr></thead><tbody>{avg_rows}</tbody></table></div>
+<h3>Ensembles and evaluation settings (selection / report split)</h3>
+<p>Choices made on this dataset are selected on participants 1–2 (14.8 min) and reported on participants 3–10 (54.3 min), so the report column is untouched by the choice. The whole-dataset numbers above involve no such choice. Ensembles average the predicted joint rotations of the listed averaged bases; stride 31 evaluates overlapping windows instead of disjoint ones.</p>
+<div class="tablewrap"><table><thead><tr><th>configuration</th><th class="num">select SIP °</th><th class="num">select mesh cm</th><th class="num">report SIP °</th><th class="num">report MPJRE °</th><th class="num">report MPJPE cm</th><th class="num">report mesh cm</th><th class="num">report MPJVE</th><th class="num">report jitter</th></tr></thead><tbody>{split_rows}</tbody></table></div>
 <h3>Post-processing on the zero-shot leader (averaged L60 control)</h3>
 <p>Every test-time refinement tried on top of the best pretrained model, scored on the whole dataset. None improves pose accuracy; the smoothed orientation fit is the only one that improves temporal quality (jitter, velocity error), at a small SIP cost.</p>
 <div class="tablewrap"><table><thead><tr><th>post-process</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">mesh cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th></tr></thead><tbody>
