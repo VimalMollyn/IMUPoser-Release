@@ -558,6 +558,26 @@ def build(out_path):
         for m in stride["fval"]:
             stride_rows += f"<tr><td>{m} · fval</td>" + "".join(f"<td class='num'>{fmt(stride['fval'][m].get(s))}</td>" for s in ss) + "</tr>"
             stride_rows += f"<tr><td>{m} · dip_test</td>" + "".join(f"<td class='num'><b>{fmt(stride['dip_test'][m].get(s))}</b></td>" if stride['dip_test'][m].get(s) is not None else "<td class='num muted'>–</td>" for s in ss) + "</tr>"
+    # ---- zero-shot on the collected IMUPoser dataset (real phone/watch/head IMU, 10 participants)
+    zs = results_rows("imuposer_zs")
+    zs_by = {}
+    for r in zs:
+        zs_by.setdefault(r["tag"], {})[r["stage"]] = r
+    def zcell(r, k, nd=2):
+        return fmt(r.get(k), nd) if r else "–"
+    zs_rows = ""
+    for tag, d in sorted(zs_by.items(), key=lambda kv: (kv[1].get("ft") or kv[1].get("base") or kv[1].get("ensemble") or {}).get("sip", 99)):
+        b, f_, e = d.get("base"), d.get("ft"), d.get("ensemble")
+        ref = by_tag.get(tag)
+        dip = fmt(ref["eval"]["sip"]) if ref else (fmt(next((x.get("sip_dip_test") for x in results_rows("ensemble") if x.get("stride") == 31 and len(x.get("members", [])) == 7), None)) if e else "–")
+        row = e or f_
+        zs_rows += (f"<tr><td class='mono'>{html.escape(tag)}</td><td class='num'>{dip}</td>"
+                    f"<td class='num'>{zcell(b, 'sip')}</td><td class='num'><b>{zcell(row, 'sip')}</b></td>"
+                    f"<td class='num'>{zcell(b, 'mpjre')} / {zcell(row, 'mpjre')}</td><td class='num'>{zcell(b, 'mpjpe_cm')} / {zcell(row, 'mpjpe_cm')}</td>"
+                    f"<td class='num'>{zcell(b, 'mpvpe_cm')} / {zcell(row, 'mpvpe_cm')}</td><td class='num'>{zcell(b, 'mpjve', 1)} / {zcell(row, 'mpjve', 1)}</td>"
+                    f"<td class='num'>{zcell(b, 'jitter', 0)} / {zcell(row, 'jitter', 0)}</td></tr>")
+    zs_gt_jit = next((r.get("jitter_gt") for r in zs), None)
+
     ens_head = (f"Best ensemble of existing fine-tuned checkpoints, selected on fval: dip_test SIP {best_ens['sip_dip_test']:.2f} "
                 f"({len(best_ens['members'])} members{', inference stride ' + str(best_ens['stride']) if best_ens.get('stride') else ''}, no new training)." if best_ens else "")
     lrows = "".join(f"<tr><td class='num'>{i+1}</td><td>{html.escape(r['tag'])}</td><td>{r['size']} {fmt((r['params'] or 0)/1e6,1)} M</td><td>{r['arm']} {html.escape(r['extra'])}</td><td class='num'>{fmt(r['hours'],0)}</td><td class='num'>{r['budget']}</td>"
@@ -633,6 +653,11 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <h3>How far is each dataset from DIP?</h3>
 <p>Per sequence, from the packed shards: the angular distance between the sequence's mean local joint rotation and DIP-train's mean pose (heading-invariant; median and 90th percentile, weighted by hours), the share of hours within 20° of DIP (DIP's own sequences sit at a median of 10° and a maximum of 21°), the sequence's own pose diversity, the 95th-percentile sensor acceleration and the share of near-static frames. Earlier, WHIP (sports) hurt and Nymeria (everyday motion) helped, and distribution rather than quality was the explanation; this table applies the same lens to the new sources and to the leftover AMASS sets, and is the basis of the DIP-like selection rule tested in the ablations.</p>
 <div class="tablewrap"><table><thead><tr><th>dataset</th><th class="num">hours</th><th class="num">sequences</th><th class="num">dist. to DIP, median °</th><th class="num">p90 °</th><th class="num">within 20°</th><th class="num">diversity °</th><th class="num">acc p95 m/s²</th><th class="num">static</th></tr></thead><tbody>{dl_rows}</tbody></table></div>
+
+<h2>Zero-shot on the collected IMUPoser dataset (real phone, watch and head IMU)</h2>
+<p>The CHI'23 IMUPoser dataset: 10 participants, 167 recordings, 1.15 h of real device IMU (left and right wrist, left and right pocket, head) with MoSh'd SMPL ground truth, covering arm raises, walking, boxing, kicking, push-ups, basketball, tennis swings, jumping jacks, hopping, jogging, head movements, sitting. Nothing was trained or tuned on it. Each model is evaluated twice: the pretrained checkpoint straight out of pretraining (<em>base</em>), and the same model after the DIP fine-tune that produces the dip_test numbers (<em>after DIP FT</em>). Metrics follow the paper: SIP error, angular error (MPJRE), positional error (MPJPE), mesh error (MPVPE), velocity error (MPJVE) and jitter (ground-truth jitter on this set is {zs_gt_jit if zs_gt_jit is not None else '–'}, on dip_test 222). Cells read base / after DIP FT.</p>
+<div class="tablewrap"><table><thead><tr><th>pretrained model</th><th class="num">dip_test SIP ° (after FT)</th><th class="num">SIP ° base</th><th class="num">SIP ° after DIP FT</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPVPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th></tr></thead><tbody>{zs_rows}</tbody></table></div>
+<p class="muted">Reference from the paper's own camera-ready results on this dataset (its DIP-fine-tuned LSTM, left wrist + right wrist + right pocket, averaged without end effectors, which is also what the evaluator here ignores): global angular error 22.21°, positional error 8.56 cm, mesh error 10.12 cm (with end effectors: 21.72°, 9.46 cm, 11.39 cm). The paper did not report SIP or a velocity error on this set. DIP fine-tuning helps dip_test but costs 1 to 5° SIP here: the fine-tune adapts to DIP's sensors and calibration, and the pretrained models generalize better to a different real-device setup.</p>
 
 <h2>What was trained on</h2>
 {svg_stack(rows)}
