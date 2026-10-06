@@ -111,7 +111,9 @@ def _meta_current(out_dir, pt_path):
     st = pt_path.stat()
     if meta.get("version") != VERSION:
         return None
-    if abs(meta.get("src_mtime", -1) - st.st_mtime) > 1e-3 or meta.get("src_size") != st.st_size:
+    # 2 s tolerance: exFAT/FAT volumes store modification times coarsely, so a .pt copied with preserved times onto
+    # such a drive (fig2's 4 TB drive) differs by a fraction of a second and would otherwise be repacked for nothing
+    if abs(meta.get("src_mtime", -1) - st.st_mtime) > 2.0 or meta.get("src_size") != st.st_size:
         return None
     for k in FIELDS:
         if not (out_dir / f"{k}.f32").exists():
