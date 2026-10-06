@@ -86,8 +86,31 @@ DIP. Converted with `scripts/3. Evaluation/imuposer_dataset_to_eval.py`; every p
 with NO fine-tune (`base_<tag>/eval_imuposer_zs.log`). Finding that changed the protocol: **the DIP fine-tune improves
 dip_test but costs 1–5° SIP on this set** (L60 control: 16.19 base vs 20.92 after FT), and the data recipes that helped
 dip_test (DIP-like selection) transfer worse than plain control (base SIP 17.7–18.8 vs 16.2–17.3). All models beat the
-paper's own DIP-fine-tuned LSTM on this set (22.21° angular / 8.56 cm / 10.12 cm without end effectors). Test-time
-optimisation (`offline_fit --iters 300`) is being evaluated on top. The web page is organised around this metric.
+paper's own DIP-fine-tuned LSTM on this set (22.21° angular / 8.56 cm / 10.12 cm without end effectors). The web page is
+organised around this metric.
+
+State on 2026-10-06 16:00 ET:
+
+- **Leader: the XL60-control base with its three best checkpoints averaged** (`base_swa_xl60_ctrl/avg.ckpt`): SIP 15.64°,
+  MPJRE 18.11°, MPJPE 7.35 cm, mesh 8.83 cm, MPJVE 24.8 cm/s. With overlapping evaluation windows (stride 31, a setting fixed
+  on the DIP validation split): 15.48° / 8.77 cm. Plain XL60 best checkpoint: 16.13° / 9.14 cm.
+- **Checkpoint averaging helps transfer on all nine runs tried** (−0.21 to −0.91° SIP, −0.03 to −0.38 cm mesh) although it was
+  neutral on dip_test after the fine-tune. Averaging top-3 + last (4 members) ties top-3 (15.60 on all, 13.73 vs 13.72 on the
+  selection split): not adopted.
+- **What transfers**: longer schedules (S120 16.47 vs S60 17.33), bigger models (XL60 16.13 < L60 16.19 < M60 17.31 — the
+  opposite order to dip_test), weight decay 1e-2 (M60 16.67) and cosine (M60 16.33) over the plain M60 (17.31). The new-data
+  recipes transfer worse than plain control at every size tried (dlall_l20 ~17.9, dlallraw_l20 18.50 despite the lowest val
+  loss of any run). Val loss does not predict this benchmark (Spearman −0.23 over the bases).
+- **Choices made on the dataset use a split** (`imuposer_split.py`: participants 1–2 select, 3–10 report). Ensembles of the
+  averaged bases: XL+L+L20 selects best (13.54 vs XL alone 13.72) and reports 16.04 vs 16.17; with stride 31 the XL+L
+  ensemble reports 15.87. Gains of 0.1–0.3°, nothing larger.
+- **Post-processing does not improve pose** (all on the averaged L60, 15.85 / 8.94): PIP/MobilePoser's physics optimizer
+  (`run_pip_physics.py`, 50 Hz, soft foot contacts, 0 QP failures) 15.89 with PIP's gains and 15.96 / jitter 107 with softer
+  gains; orientation fit 16.08 (smoothed 15.96, jitter 42); orientation injection 15.85–16.09; reduced rigid-body refiner
+  16.00. MobilePoser's physics gain comes with its own velocity/contact heads and translation, which our pose-only model
+  lacks. Thread closed.
+- Running for this metric: XL60 continued +60 epochs from `last.ckpt` with snapshots for averaging (fig2 GPU1), M120 control
+  with snapshots (local GPU1), the L/XL data-recipe runs the user asked for (local GPU0).
 
 ## 5b. Results on dip_test (snapshot 2026-10-05 14:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
 
