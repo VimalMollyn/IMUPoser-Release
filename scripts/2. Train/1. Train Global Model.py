@@ -10,6 +10,19 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 import lightning.pytorch as pl
+
+# The streaming loader memory-maps 5 files per dataset and the large arms have 400+ datasets, so every worker holds
+# 2000+ descriptors: raise the soft open-files limit to the hard limit and share tensors through the file system
+# instead of descriptors (fig2's default soft limit of 1024 crashed the loader with "Too many open files").
+try:
+    import resource
+    _soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if _soft < _hard:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (_hard, _hard))
+        print(f"[fd] open-files limit raised {_soft} -> {_hard}", flush=True)
+except Exception as _e:  # pragma: no cover
+    print(f"[fd] could not raise the open-files limit: {_e}", flush=True)
+torch.multiprocessing.set_sharing_strategy("file_system")
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch import seed_everything
