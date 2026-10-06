@@ -158,6 +158,7 @@ LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (
                 (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
                 (r"_stab$", "grad-norm clip 1.0 + synthetic accel clamped to ±160 m/s² (the L/XL stability settings)"),
                 (r"^cal_.*_bf16$", "fig2 calibration: same recipe in bf16 mixed precision on an RTX 4060 Ti"),
+                (r"^cal_.*_fp32$", "fig2 calibration: same recipe in fp32 on an RTX 4060 Ti"),
                 (r"^ftseed(\d+)_", "FT seed {0} (FT-stage noise)"), (r"^ftlr5e5_", "FT lr 5e-5"), (r"^ftlr2e4_", "FT lr 2e-4"),
                 (r"^ftcos120_", "FT cosine LR, 120 ep"), (r"^ftcos_", "FT cosine LR"), (r"^ft120_", "FT 120 ep")]
 
@@ -174,7 +175,7 @@ def lever_ref(tag):
     if tag.endswith("_cos"): return tag[:-4]
     if tag.endswith("_wd1e2"): return tag[:-6]
     if tag.endswith("_stab"): return tag[:-5]
-    if tag.startswith("cal_") and tag.endswith("_bf16"): return "scale_" + tag[4:-5]
+    if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
     if tag.startswith("swa_"): return "scale_" + tag[4:]
     m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
     if m: return "scale_" + m.group(1)
