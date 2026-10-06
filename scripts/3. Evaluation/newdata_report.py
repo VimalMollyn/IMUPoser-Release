@@ -474,10 +474,14 @@ def build(out_path):
     zbest = min(zfin, key=lambda r: r["zs"]["sip"]) if zfin else None
     if zbest:
         z = zbest["zs"]
-        head = (f"Best zero-shot on the IMUPoser dataset, no fine-tune: SIP {z['sip']:.2f}° "
+        head = (f"Best zero-shot on the IMUPoser dataset, no fine-tune: SIP {z['sip']:.2f}°, mesh error {z['mpvpe']:.2f} cm "
                 f"({zbest['size']} model, {zbest['params']/1e6:.1f} M params, pretrained on {zbest['arm'].rstrip('+')}{' ' + zbest['extra'] if zbest['extra'] else ''}, "
-                f"{zbest['hours']:.0f} h, {zbest['budget']} epochs): angular {z['mpjre']:.2f}°, positional {z['mpjpe']:.2f} cm, mesh {z['mpvpe']:.2f} cm, "
+                f"{zbest['hours']:.0f} h, {zbest['budget']} epochs); angular {z['mpjre']:.2f}°, positional {z['mpjpe']:.2f} cm, "
                 f"velocity {z['mpjve']:.1f} cm/s, jitter {z['jitter']}.")
+        zmesh_best = min(zfin, key=lambda r: r["zs"]["mpvpe"])
+        if zmesh_best is not zbest:
+            head += (f" Lowest mesh error: {zmesh_best['zs']['mpvpe']:.2f} cm ({zmesh_best['size']}, {zmesh_best['arm'].rstrip('+')}"
+                     f"{' ' + zmesh_best['extra'] if zmesh_best['extra'] else ''}, SIP {zmesh_best['zs']['sip']:.2f}°).")
     else:
         head = "No zero-shot evaluation yet."
     head2 = (f"The paper's own DIP-fine-tuned model on this set, same sensors, without end effectors: 22.21°, 8.56 cm, 10.12 cm. "
@@ -506,6 +510,7 @@ def build(out_path):
                 svg_xy(cs, xlabel="compute proxy: parameters × optimizer steps (log)", ylabel=ylab, xfmt=lambda v: f"{v:.0e}".replace("e+", "e")))
     model_chart, data_chart, comp_chart = charts(lambda r: r["eval"]["sip"] if r.get("eval") else None, "dip_test SIP (deg, lower is better)", fin)
     zmodel_chart, zdata_chart, zcomp_chart = charts(lambda r: r["zs"]["sip"] if r.get("zs") else None, "IMUPoser zero-shot SIP (deg, lower is better)", zfin)
+    vmodel_chart, vdata_chart, vcomp_chart = charts(lambda r: r["zs"]["mpvpe"] if r.get("zs") else None, "IMUPoser zero-shot mesh error (cm, lower is better)", zfin)
 
     # grid table (both benchmarks)
     grid = sorted([r for r in runs if r["arm"] in ("curated-12", "control", "treatment") and not r["extra"] and not r.get("interim")],
@@ -519,7 +524,7 @@ def build(out_path):
     zft = {r["tag"]: r for r in results_rows("imuposer_zs") if r.get("stage") == "ft"}
     zlb = sorted(zfin, key=lambda r: r["zs"]["sip"])
     zrows = "".join(f"<tr><td class='num'>{i+1}</td><td class='mono'>{html.escape(r['tag'])}</td><td>{r['size']} {fmt((r['params'] or 0)/1e6,1)} M</td><td>{r['arm'].rstrip('+')} {html.escape(r['extra'])}</td><td class='num'>{fmt(r['hours'],0)}</td><td class='num'>{r['budget']}</td>"
-                    f"<td class='num'><b>{r['zs']['sip']:.2f}</b></td><td class='num'>{fmt(r.get('zs_tto') and r['zs_tto']['sip'])}</td><td class='num'>{r['zs']['mpjre']:.2f}</td><td class='num'>{r['zs']['mpjpe']:.2f}</td><td class='num'>{r['zs']['mpvpe']:.2f}</td><td class='num'>{r['zs']['mpjve']:.1f}</td><td class='num'>{r['zs']['jitter']}</td>"
+                    f"<td class='num'><b>{r['zs']['sip']:.2f}</b></td><td class='num'>{fmt(r.get('zs_tto') and r['zs_tto']['sip'])}</td><td class='num'><b>{r['zs']['mpvpe']:.2f}</b></td><td class='num'>{fmt(r.get('zs_tto') and r['zs_tto']['mpvpe'])}</td><td class='num'>{r['zs']['mpjre']:.2f}</td><td class='num'>{r['zs']['mpjpe']:.2f}</td><td class='num'>{r['zs']['mpjve']:.1f}</td><td class='num'>{r['zs']['jitter']}</td>"
                     f"<td class='num muted'>{fmt(zft.get(r['tag'], {}).get('sip'))}</td><td class='num muted'>{fmt(r['eval'] and r['eval']['sip'])}</td></tr>" for i, r in enumerate(zlb))
 
     # ---- treatment vs control (original question): S at 60 ep, seeds
@@ -647,12 +652,19 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 
 <h2>Zero-shot on the collected IMUPoser dataset (real phone, watch and head IMU)</h2>
 <p>The CHI'23 IMUPoser dataset: 10 participants, 167 recordings, 1.15 h of real device IMU (left and right wrist, left and right pocket, head) with MoSh'd SMPL ground truth; arm raises, walking, boxing, kicking, push-ups, basketball, tennis swings, jumping jacks, hopping, jogging, head movements, sitting. It is closer to the deployment setting than DIP, and nothing is trained or tuned on it. Every pretrained checkpoint is evaluated on it directly, with no DIP fine-tune: the fine-tune improves dip_test but costs 1 to 5° SIP here (last two columns), so from 2026-10-06 this zero-shot score is the primary number and dip_test is secondary. Metrics follow the paper: SIP error, angular error (MPJRE), positional error (MPJPE), mesh error (MPVPE), velocity error (MPJVE), jitter (ground-truth jitter on this set is {zs_gt_jit if zs_gt_jit is not None else 54}; on dip_test 222). "TTO" is the physics-style test-time optimisation (300 Adam steps per sequence pulling the predicted pose's forward-kinematics sensor orientations onto the measured ones, anchored to the network output), where it has been run.</p>
+<h3>SIP error (hips and shoulders, °)</h3>
 <div class="grid3">
-<div><h3>Model size, at fixed data</h3>{zmodel_chart}</div>
-<div><h3>Data, at fixed model size</h3>{zdata_chart}</div>
-<div><h3>Compute</h3>{zcomp_chart}</div>
+<div><h4 class="muted" style="margin:.2em 0">Model size, at fixed data</h4>{zmodel_chart}</div>
+<div><h4 class="muted" style="margin:.2em 0">Data, at fixed model size</h4>{zdata_chart}</div>
+<div><h4 class="muted" style="margin:.2em 0">Compute</h4>{zcomp_chart}</div>
 </div>
-<div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>pretraining data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">SIP ° + TTO</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPVPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th><th class="num">SIP ° after DIP FT</th><th class="num">dip_test SIP ° (FT)</th></tr></thead><tbody>{zrows}</tbody></table></div>
+<h3>Mesh error (mean vertex position error, cm)</h3>
+<div class="grid3">
+<div><h4 class="muted" style="margin:.2em 0">Model size, at fixed data</h4>{vmodel_chart}</div>
+<div><h4 class="muted" style="margin:.2em 0">Data, at fixed model size</h4>{vdata_chart}</div>
+<div><h4 class="muted" style="margin:.2em 0">Compute</h4>{vcomp_chart}</div>
+</div>
+<div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>pretraining data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">SIP ° + TTO</th><th class="num">mesh cm</th><th class="num">mesh cm + TTO</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th><th class="num">SIP ° after DIP FT</th><th class="num">dip_test SIP ° (FT)</th></tr></thead><tbody>{zrows}</tbody></table></div>
 <p class="muted">Reference from the paper's own camera-ready results on this dataset (its DIP-fine-tuned LSTM, left wrist + right wrist + right pocket, averaged without end effectors, which is also what the evaluator here ignores): global angular error 22.21°, positional error 8.56 cm, mesh error 10.12 cm (with end effectors: 21.72°, 9.46 cm, 11.39 cm). The paper did not report SIP or a velocity error on this set.</p>
 
 <h2>The DIP benchmark (after the DIP fine-tune): scaling laws</h2>
