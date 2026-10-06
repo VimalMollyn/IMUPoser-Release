@@ -199,6 +199,8 @@ def main():
     ap.add_argument("--reroot", action="store_true", help="re-estimate pelvis via Wahba from sensed measurements")
     ap.add_argument("--wahba_w", default="1,0.3,1", help="per-sensor weights (lw,rp,h) for the root estimate")
     ap.add_argument("--smooth_root", type=int, default=0, help="iterations of temporal pelvis smoothing")
+    ap.add_argument("--phys", action="store_true", help="PIP-style rigid-body PD refinement of the network pose (imuposer.physics; "
+                                                        "knobs PHYS_OMEGA0 / PHYS_ZETA / PHYS_GRAVITY / PHYS_SUBSTEPS)")
     ap.add_argument("--device", default="0")
     ap.add_argument("--save-pkl", default=None)
     ap.add_argument("--diag", action="store_true", help="print per-joint err delta")
@@ -222,6 +224,12 @@ def main():
             os.environ["TF_FF"] = str(sd["net.enc.layers.0.linear1.weight"].shape[0])
         m = get_model(cfg); m.load_state_dict(sd, strict=False); return m.eval().to(dev)
     members = [build(n) for n in a.members.split(",")]
+    if a.phys:
+        from imuposer.physics import PhysicsRefineWrapper
+        pm_cpu = ParametricModel(cfg.og_smpl_model_path, device="cpu")
+        members = [PhysicsRefineWrapper(m, pm_cpu).to(dev) for m in members]
+        print(f"[phys] rigid-body PD refinement on: omega0={os.environ.get('PHYS_OMEGA0', '40')} zeta={os.environ.get('PHYS_ZETA', '1.0')} "
+              f"gravity={os.environ.get('PHYS_GRAVITY', '1.0')} substeps={os.environ.get('PHYS_SUBSTEPS', '4')}", flush=True)
 
     combo = amass_combos[a.combo]                         # e.g. lw_rp_h [0,3,4], lw_rw_rp [0,1,3]
     sens_joints = [JI5[s] for s in combo]                 # SMPL joints of the sensed slots
