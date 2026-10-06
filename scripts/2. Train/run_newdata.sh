@@ -19,11 +19,14 @@ OUT="${OUT_DIR:-$REPO/checkpoints/newdata}"
 mkdir -p "$OUT"
 
 CURATED="CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits"
-NYM="$(ls "$DD" | grep -E '^Nymeria_.*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
-NEW="$(ls "$DD" | grep -E '^(BONES_|FORMHOI_|MM_|MotionX_).*\.pt$' | sed 's/\.pt$//' | paste -sd, -)"
-# MotionGV (video-estimated MotionMillion) lives as shard-only datasets (no .pt): list its shard dirs
 SH="${IMUPOSER_SHARD_DIR:-$IMUPOSER_DATA_DIR/shards_processed_imuposer_25fps}"
-GV="$(ls "$SH" 2>/dev/null | grep -E '^MGV_' | grep -v '\.lock$\|\.packing$' | paste -sd, -)"
+# dataset names matching a regex, from the .pt files in $DD AND the packed shard dirs in $SH (a machine that only
+# holds the shards, e.g. fig2, has no .pt files; the loader reads shards either way)
+names_matching(){ { ls "$DD" 2>/dev/null | grep -E "^($1).*\.pt$" | sed 's/\.pt$//'; ls "$SH" 2>/dev/null | grep -E "^($1)" | grep -v '\.lock$\|\.packing$'; } | sort -u | paste -sd, -; }
+NYM="$(names_matching 'Nymeria_')"
+NEW="$(names_matching 'BONES_|FORMHOI_|MM_|MotionX_')"
+# MotionGV (video-estimated MotionMillion) lives as shard-only datasets (no .pt)
+GV="$(names_matching 'MGV_')"
 [ -n "$NYM" ] || { echo "no Nymeria_*.pt in $DD" >&2; exit 1; }
 
 GPU="${1:?gpu}"; shift

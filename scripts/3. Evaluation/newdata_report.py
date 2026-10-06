@@ -228,7 +228,7 @@ def results_rows(kind):
 
 def run_times(tag):
     out = {}
-    for lp in list(LOGS.glob("run_*.log")) + list(LOGS.glob("chain_*.log")) + list(LOGS.glob("queue_gpu*.log")):
+    for lp in list(LOGS.glob("run_*.log")) + list(LOGS.glob("chain_*.log")) + list(LOGS.glob("queue_gpu*.log")) + list(LOGS.glob("queue_fig2_gpu*.log")):
         t = read(lp)
         m = re.search(rf"\[(\S+)\] START base_{re.escape(tag)} ", t)
         if m: out["start"] = m.group(1)
