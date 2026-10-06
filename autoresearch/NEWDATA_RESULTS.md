@@ -78,7 +78,18 @@ Per dataset:
 
 *filled by the report script — see the web page.*
 
-## 5. Results (snapshot 2026-10-05 14:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
+## 5a. Primary benchmark from 2026-10-06: zero-shot on the collected IMUPoser dataset
+
+The CHI'23 IMUPoser dataset (Samsung T5: `CHI23/IMUPoser/CameraReady/dataset-release/imuposer_dataset`; 10
+participants, 167 recordings, 1.15 h of real phone/watch/head IMU with MoSh'd SMPL GT) is closer to deployment than
+DIP. Converted with `scripts/3. Evaluation/imuposer_dataset_to_eval.py`; every pretrained checkpoint is evaluated on it
+with NO fine-tune (`base_<tag>/eval_imuposer_zs.log`). Finding that changed the protocol: **the DIP fine-tune improves
+dip_test but costs 1–5° SIP on this set** (L60 control: 16.19 base vs 20.92 after FT), and the data recipes that helped
+dip_test (DIP-like selection) transfer worse than plain control (base SIP 17.7–18.8 vs 16.2–17.3). All models beat the
+paper's own DIP-fine-tuned LSTM on this set (22.21° angular / 8.56 cm / 10.12 cm without end effectors). Test-time
+optimisation (`offline_fit --iters 300`) is being evaluated on top. The web page is organised around this metric.
+
+## 5b. Results on dip_test (snapshot 2026-10-05 14:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
 
 **Headline (2026-10-05).** Selecting data by closeness to DIP beats adding hours. On the S model at 20 epochs,
 control + ALL of MotionGV filtered (636 h) = 17.06, control + a RANDOM 256 h of it = 16.80, control + the 256 h

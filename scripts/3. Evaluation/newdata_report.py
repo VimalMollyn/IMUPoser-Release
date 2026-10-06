@@ -85,12 +85,24 @@ def parse_train_log(p):
     return r
 
 
-def parse_eval(p):
+_EVAL_RE = r"SIP\s+([\d.]+) deg\s+MPJRE\s+([\d.]+) deg\s+MPJPE\s+([\d.]+) cm\s+MPVPE\s+([\d.]+) cm\s+MPJVE\s+([\d.]+) cm/s\s+Jit\s+(\d+)"
+
+
+def _eval_dict(m):
+    return {"sip": float(m.group(1)), "mpjre": float(m.group(2)), "mpjpe": float(m.group(3)), "mpvpe": float(m.group(4)),
+            "mpjve": float(m.group(5)), "jitter": int(m.group(6))}
+
+
+def parse_eval(p, section=None):
+    """Metrics line of an offline_fit.py log. section=None: the first line (network output); section='fit': the line
+    under '== OFFLINE FIT' (after test-time optimisation)."""
     txt = read(p)
-    m = re.search(r"SIP\s+([\d.]+) deg\s+MPJRE\s+([\d.]+) deg\s+MPJPE\s+([\d.]+) cm\s+MPVPE\s+([\d.]+) cm\s+MPJVE\s+([\d.]+)", txt)
-    if not m:
-        return None
-    return {"sip": float(m.group(1)), "mpjre": float(m.group(2)), "mpjpe": float(m.group(3)), "mpvpe": float(m.group(4)), "mpjve": float(m.group(5))}
+    if section == "fit":
+        i = txt.find("== OFFLINE FIT")
+        if i < 0: return None
+        txt = txt[i:]
+    m = re.search(_EVAL_RE, txt)
+    return _eval_dict(m) if m else None
 
 
 def params_of(base_dir):
@@ -246,11 +258,16 @@ def collect_runs():
     def mk_run(tag, d, base):
         ft = parse_train_log(CK / f"ft_{tag}" / "train.log")
         ev = parse_eval(CK / f"ft_{tag}" / "eval_dip_test.log")
+        # zero-shot on the collected IMUPoser dataset: the PRETRAINED checkpoint, no DIP fine-tune (the primary metric
+        # from 2026-10-06 on), optionally after test-time optimisation (offline_fit --iters 300)
+        zs = parse_eval(d / "eval_imuposer_zs.log")
+        zs_tto = parse_eval(d / "eval_imuposer_tto300.log", section="fit")
         n = params_of(d)
         seed = int(re.search(r"_s(\d+)$", tag).group(1)) if re.search(r"_s(\d+)$", tag) else 1
         lever = lever_label(tag)
         extra = lever or next((lab for pre, lab in EXTRA_LABELS if tag.startswith(pre)), "")
         return {"tag": tag, "arm": arm_label(tag), "extra": extra, "lever": lever, "seed": seed, "base": base, "ft": ft, "eval": ev,
+                "zs": zs, "zs_tto": zs_tto,
                 "times": run_times(tag), "params": n, "size": size_label(n), "budget": budget_of(tag, base),
                 "hours": base.get("hours"), "steps": (base.get("steps_per_epoch") or 0) * budget_of(tag, base)}
 
@@ -451,47 +468,59 @@ def build(out_path):
     proto = [r for r in fin if not r.get("lever")]
     best = min(proto, key=lambda r: r["eval"]["sip"]) if proto else None
 
-    # ---- headline
-    if best:
-        head = (f"Best single model so far: dip_test SIP {best['eval']['sip']:.2f} "
-                f"({best['size']} model, {best['params']/1e6:.1f} M params, {best['arm'].rstrip('+')}{' ' + best['extra'] if best['extra'] else ''}, "
-                f"{best['hours']:.0f} h, {best['budget']} epochs). Previous deliverable: {PREV_DELIVERABLE:.2f}.")
+    # ---- headline. PRIMARY metric (since 2026-10-06): zero-shot SIP on the collected IMUPoser dataset of the PRETRAINED
+    # checkpoint, no DIP fine-tune (the fine-tune helps dip_test and hurts this real-device set). dip_test is secondary.
+    zfin = [r for r in runs if r.get("zs") and not r.get("interim") and not r.get("ft_variant")]
+    zbest = min(zfin, key=lambda r: r["zs"]["sip"]) if zfin else None
+    if zbest:
+        z = zbest["zs"]
+        head = (f"Best zero-shot on the IMUPoser dataset, no fine-tune: SIP {z['sip']:.2f}° "
+                f"({zbest['size']} model, {zbest['params']/1e6:.1f} M params, pretrained on {zbest['arm'].rstrip('+')}{' ' + zbest['extra'] if zbest['extra'] else ''}, "
+                f"{zbest['hours']:.0f} h, {zbest['budget']} epochs): angular {z['mpjre']:.2f}°, positional {z['mpjpe']:.2f} cm, mesh {z['mpvpe']:.2f} cm, "
+                f"velocity {z['mpjve']:.1f} cm/s, jitter {z['jitter']}.")
     else:
-        head = "No finished run yet."
-    sub = f"{len(fin)} finished runs, {sum(1 for r in runs if r['base'].get('status')=='running')} running, page generated {now} ET. Seed noise on this benchmark is about ±{NOISE} deg."
+        head = "No zero-shot evaluation yet."
+    head2 = (f"The paper's own DIP-fine-tuned model on this set, same sensors, without end effectors: 22.21°, 8.56 cm, 10.12 cm. "
+             + (f"Secondary benchmark, dip_test after the DIP fine-tune: best single model {best['eval']['sip']:.2f} ({best['size']}, {best['arm'].rstrip('+')}{' ' + best['extra'] if best['extra'] else ''}), previous deliverable {PREV_DELIVERABLE:.2f}." if best else ""))
+    sub = f"{len(fin)} finished runs ({len(zfin)} with zero-shot scores), {sum(1 for r in runs if r['base'].get('status')=='running')} running, page generated {now} ET. Seed noise on dip_test is about ±{NOISE} deg."
 
-    # ---- scaling: model axis at each data arm (20-ep budget + 60-ep points)
-    def pts(filter_fn, label_fn=lambda r: ""):
-        return [(r["params"], r["eval"]["sip"], label_fn(r)) for r in fin if r["params"] and filter_fn(r)]
-    model_series = []
-    for arm, col in (("curated-12", ARMCOL["curated-12"]), ("control", ARMCOL["control"]), ("treatment", ARMCOL["treatment"])):
-        for budget, dash, mk in ((20, False, None), (60, True, "square")):
-            p = pts(lambda r, a=arm, b=budget: r["arm"] == a and r["budget"] == b and not r["extra"] and r["seed"] == 1, lambda r: r["size"])
-            if p:
-                model_series.append({"label": f"{arm} · {budget} ep", "color": col, "points": p, "dash": dash, "marker": mk})
-    model_chart = svg_xy(model_series, xlabel="parameters (log)", ylabel="dip_test SIP (deg, lower is better)")
-    # data axis at each size
-    data_series = []
-    for size in ("S", "M", "L", "XL"):
-        for budget, dash, mk in ((20, False, None), (60, True, "square")):
-            p = [(r["hours"], r["eval"]["sip"], r["arm"][:9]) for r in fin if r["size"] == size and r["budget"] == budget and r["hours"] and not r["extra"] and r["seed"] == 1 and r["arm"] in ("curated-12", "control", "treatment")]
-            if p:
-                data_series.append({"label": f"{size} · {budget} ep", "color": COL[size], "points": p, "dash": dash, "marker": mk})
-    data_chart = svg_xy(data_series, xlabel="pretraining hours (log)", ylabel="dip_test SIP (deg)")
-    # compute axis: params x optimizer steps
-    comp_series = []
-    for size in ("S", "M", "L", "XL"):
-        p = [(r["params"] * r["steps"], r["eval"]["sip"], f"{r['arm'][:4]} {r['budget']}ep") for r in fin if r["size"] == size and r["steps"] and not r["extra"] and r["arm"] in ("curated-12", "control", "treatment")]
-        if p:
-            comp_series.append({"label": size, "color": COL[size], "points": p})
-    comp_chart = svg_xy(comp_series, xlabel="compute proxy: parameters × optimizer steps (log)", ylabel="dip_test SIP (deg)", xfmt=lambda v: f"{v:.0e}".replace("e+", "e"))
+    # ---- scaling charts for a metric: model axis per data arm, data axis per size, compute proxy
+    def charts(metric, ylab, pool):
+        fm = [r for r in pool if metric(r) is not None]
+        ms = []
+        for arm, col in (("curated-12", ARMCOL["curated-12"]), ("control", ARMCOL["control"]), ("treatment", ARMCOL["treatment"])):
+            for budget, dash, mk in ((20, False, None), (60, True, "square")):
+                p = [(r["params"], metric(r), r["size"]) for r in fm if r["params"] and r["arm"] == arm and r["budget"] == budget and not r["extra"] and r["seed"] == 1]
+                if p: ms.append({"label": f"{arm} · {budget} ep", "color": col, "points": p, "dash": dash, "marker": mk})
+        ds = []
+        for size in ("S", "M", "L", "XL"):
+            for budget, dash, mk in ((20, False, None), (60, True, "square")):
+                p = [(r["hours"], metric(r), r["arm"][:9]) for r in fm if r["size"] == size and r["budget"] == budget and r["hours"] and not r["extra"] and r["seed"] == 1 and r["arm"] in ("curated-12", "control", "treatment")]
+                if p: ds.append({"label": f"{size} · {budget} ep", "color": COL[size], "points": p, "dash": dash, "marker": mk})
+        cs = []
+        for size in ("S", "M", "L", "XL"):
+            p = [(r["params"] * r["steps"], metric(r), f"{r['arm'][:4]} {r['budget']}ep") for r in fm if r["size"] == size and r["steps"] and not r["extra"] and r["arm"] in ("curated-12", "control", "treatment")]
+            if p: cs.append({"label": size, "color": COL[size], "points": p})
+        return (svg_xy(ms, xlabel="parameters (log)", ylabel=ylab),
+                svg_xy(ds, xlabel="pretraining hours (log)", ylabel=ylab),
+                svg_xy(cs, xlabel="compute proxy: parameters × optimizer steps (log)", ylabel=ylab, xfmt=lambda v: f"{v:.0e}".replace("e+", "e")))
+    model_chart, data_chart, comp_chart = charts(lambda r: r["eval"]["sip"] if r.get("eval") else None, "dip_test SIP (deg, lower is better)", fin)
+    zmodel_chart, zdata_chart, zcomp_chart = charts(lambda r: r["zs"]["sip"] if r.get("zs") else None, "IMUPoser zero-shot SIP (deg, lower is better)", zfin)
 
-    # grid table
+    # grid table (both benchmarks)
     grid = sorted([r for r in runs if r["arm"] in ("curated-12", "control", "treatment") and not r["extra"] and not r.get("interim")],
                   key=lambda r: ({"curated-12": 0, "control": 1, "treatment": 2}[r["arm"]], r["budget"], r["params"] or 0, r["seed"]))
     grows = "".join(f"<tr><td>{r['size']} <span class='muted'>{fmt((r['params'] or 0)/1e6,1)} M</span></td><td>{r['arm']}</td><td class='num'>{fmt(r['hours'],0)}</td>"
                     f"<td class='num'>{r['budget']}</td><td class='num'>{r['seed']}</td><td>{row_status(r)}</td>"
-                    f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjre'])}</td><td class='num'>{fmt(r['eval'] and r['eval']['mpjpe'])}</td></tr>" for r in grid)
+                    f"<td class='num'><b>{fmt(r.get('zs') and r['zs']['sip'])}</b></td><td class='num'>{fmt(r.get('zs') and r['zs']['mpjre'])}</td><td class='num'>{fmt(r.get('zs') and r['zs']['mpjpe'])}</td>"
+                    f"<td class='num'>{fmt(r['eval'] and r['eval']['sip'])}</td></tr>" for r in grid)
+
+    # ---- zero-shot leaderboard: every run with a zero-shot score (pretrained checkpoint), best first; TTO column where run
+    zft = {r["tag"]: r for r in results_rows("imuposer_zs") if r.get("stage") == "ft"}
+    zlb = sorted(zfin, key=lambda r: r["zs"]["sip"])
+    zrows = "".join(f"<tr><td class='num'>{i+1}</td><td class='mono'>{html.escape(r['tag'])}</td><td>{r['size']} {fmt((r['params'] or 0)/1e6,1)} M</td><td>{r['arm'].rstrip('+')} {html.escape(r['extra'])}</td><td class='num'>{fmt(r['hours'],0)}</td><td class='num'>{r['budget']}</td>"
+                    f"<td class='num'><b>{r['zs']['sip']:.2f}</b></td><td class='num'>{fmt(r.get('zs_tto') and r['zs_tto']['sip'])}</td><td class='num'>{r['zs']['mpjre']:.2f}</td><td class='num'>{r['zs']['mpjpe']:.2f}</td><td class='num'>{r['zs']['mpvpe']:.2f}</td><td class='num'>{r['zs']['mpjve']:.1f}</td><td class='num'>{r['zs']['jitter']}</td>"
+                    f"<td class='num muted'>{fmt(zft.get(r['tag'], {}).get('sip'))}</td><td class='num muted'>{fmt(r['eval'] and r['eval']['sip'])}</td></tr>" for i, r in enumerate(zlb))
 
     # ---- treatment vs control (original question): S at 60 ep, seeds
     c60 = [r for r in fin if r["arm"] == "control" and r["size"] == "S" and r["budget"] == 60 and not r["extra"]]
@@ -614,18 +643,28 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <div class="eyebrow">IMUPoser · left watch + right watch + right pocket · 25 Hz · page generated {html.escape(now)} ET</div>
 <h1>How far do data and model size take sparse-IMU pose estimation?</h1>
 <p>One benchmark throughout: pretrain on synthetic IMU from motion capture, fine-tune on real DIP-IMU training subjects, report on the held-out DIP test subjects (s09, s10). SIP is the mean angular error of hips and shoulders; lower is better. Every number on this page is that single protocol with one thing varied at a time.</p>
-<div class="headline"><div class="eyebrow">headline</div><p class="big">{html.escape(head)}</p><p style="margin:0 0 6px">{html.escape(ens_head)}</p><p class="muted" style="margin:0">{html.escape(sub)}</p></div>
+<div class="headline"><div class="eyebrow">headline · primary benchmark: zero-shot on real device IMU</div><p class="big">{html.escape(head)}</p><p style="margin:0 0 6px">{html.escape(head2)}</p><p class="muted" style="margin:0">{html.escape(sub)}</p></div>
 
-<h2>Scaling laws</h2>
-<p>Model size: S = d256/4 layers (3.3 M), M = d384/6 (10.9 M), L = d512/8 (25.6 M), XL = d768/8 (~58 M); same optimizer (AdamW 3e-4), effective batch 256, dropout 0.1. XL is the exception: at 3e-4 it diverged, so XL runs use 1.5e-4 with a 1000-step warmup and beta2 0.95 (L and XL also use gradient clipping and the acceleration clamp), and the XL-on-control run was trained on fig2 in bf16, which the calibration runs put at about +0.1. Data: curated-12 AMASS (35 h), control = curated-12 + Nymeria (267 h), treatment = control + BONES-SEED + form-hoi + MotionMillion mocap + Motion-X (676 h). Round markers are a fixed 20-epoch budget (each run sees every window 20 times); squares are the full 60-epoch schedule.</p>
+<h2>Zero-shot on the collected IMUPoser dataset (real phone, watch and head IMU)</h2>
+<p>The CHI'23 IMUPoser dataset: 10 participants, 167 recordings, 1.15 h of real device IMU (left and right wrist, left and right pocket, head) with MoSh'd SMPL ground truth; arm raises, walking, boxing, kicking, push-ups, basketball, tennis swings, jumping jacks, hopping, jogging, head movements, sitting. It is closer to the deployment setting than DIP, and nothing is trained or tuned on it. Every pretrained checkpoint is evaluated on it directly, with no DIP fine-tune: the fine-tune improves dip_test but costs 1 to 5° SIP here (last two columns), so from 2026-10-06 this zero-shot score is the primary number and dip_test is secondary. Metrics follow the paper: SIP error, angular error (MPJRE), positional error (MPJPE), mesh error (MPVPE), velocity error (MPJVE), jitter (ground-truth jitter on this set is {zs_gt_jit if zs_gt_jit is not None else 54}; on dip_test 222). "TTO" is the physics-style test-time optimisation (300 Adam steps per sequence pulling the predicted pose's forward-kinematics sensor orientations onto the measured ones, anchored to the network output), where it has been run.</p>
+<div class="grid3">
+<div><h3>Model size, at fixed data</h3>{zmodel_chart}</div>
+<div><h3>Data, at fixed model size</h3>{zdata_chart}</div>
+<div><h3>Compute</h3>{zcomp_chart}</div>
+</div>
+<div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>pretraining data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">SIP ° + TTO</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPVPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th><th class="num">SIP ° after DIP FT</th><th class="num">dip_test SIP ° (FT)</th></tr></thead><tbody>{zrows}</tbody></table></div>
+<p class="muted">Reference from the paper's own camera-ready results on this dataset (its DIP-fine-tuned LSTM, left wrist + right wrist + right pocket, averaged without end effectors, which is also what the evaluator here ignores): global angular error 22.21°, positional error 8.56 cm, mesh error 10.12 cm (with end effectors: 21.72°, 9.46 cm, 11.39 cm). The paper did not report SIP or a velocity error on this set.</p>
+
+<h2>The DIP benchmark (after the DIP fine-tune): scaling laws</h2>
+<p>Secondary benchmark. Pretrain, fine-tune on real DIP training subjects, test on the held-out DIP subjects. Model size: S = d256/4 layers (3.3 M), M = d384/6 (10.9 M), L = d512/8 (25.6 M), XL = d768/8 (~58 M); same optimizer (AdamW 3e-4), effective batch 256, dropout 0.1. XL is the exception: at 3e-4 it diverged, so XL runs use 1.5e-4 with a 1000-step warmup and beta2 0.95 (L and XL also use gradient clipping and the acceleration clamp), and the XL-on-control run was trained on fig2 in bf16, which the calibration runs put at about +0.1. Data: curated-12 AMASS (35 h), control = curated-12 + Nymeria (267 h), treatment = control + BONES-SEED + form-hoi + MotionMillion mocap + Motion-X (676 h). Round markers are a fixed 20-epoch budget (each run sees every window 20 times); squares are the full 60-epoch schedule.</p>
 <div class="grid3">
 <div><h3>Model size, at fixed data</h3>{model_chart}</div>
 <div><h3>Data, at fixed model size</h3>{data_chart}</div>
 <div><h3>Compute</h3>{comp_chart}</div>
 </div>
-<div class="tablewrap"><table><thead><tr><th>model</th><th>data</th><th class="num">hours</th><th class="num">epochs</th><th class="num">seed</th><th>pretrain</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{grows}</tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>model</th><th>data</th><th class="num">hours</th><th class="num">epochs</th><th class="num">seed</th><th>pretrain</th><th class="num">zero-shot SIP °</th><th class="num">zero-shot MPJRE °</th><th class="num">zero-shot MPJPE cm</th><th class="num">dip_test SIP ° (FT)</th></tr></thead><tbody>{grows}</tbody></table></div>
 
-<h2>Leaderboard (one row per pretrained model)</h2>
+<h2>dip_test leaderboard (one row per pretrained model, after the DIP fine-tune)</h2>
 <div class="tablewrap"><table><thead><tr><th class="num">#</th><th>run</th><th>model</th><th>data</th><th class="num">hours</th><th class="num">ep</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th></tr></thead><tbody>{lrows}</tbody></table></div>
 <p class="muted">Previous deliverable (2026-09-01, same S model and control data, in-RAM loader, original Nymeria files): {PREV_DELIVERABLE:.2f}.</p>
 
@@ -654,10 +693,9 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <p>Per sequence, from the packed shards: the angular distance between the sequence's mean local joint rotation and DIP-train's mean pose (heading-invariant; median and 90th percentile, weighted by hours), the share of hours within 20° of DIP (DIP's own sequences sit at a median of 10° and a maximum of 21°), the sequence's own pose diversity, the 95th-percentile sensor acceleration and the share of near-static frames. Earlier, WHIP (sports) hurt and Nymeria (everyday motion) helped, and distribution rather than quality was the explanation; this table applies the same lens to the new sources and to the leftover AMASS sets, and is the basis of the DIP-like selection rule tested in the ablations.</p>
 <div class="tablewrap"><table><thead><tr><th>dataset</th><th class="num">hours</th><th class="num">sequences</th><th class="num">dist. to DIP, median °</th><th class="num">p90 °</th><th class="num">within 20°</th><th class="num">diversity °</th><th class="num">acc p95 m/s²</th><th class="num">static</th></tr></thead><tbody>{dl_rows}</tbody></table></div>
 
-<h2>Zero-shot on the collected IMUPoser dataset (real phone, watch and head IMU)</h2>
-<p>The CHI'23 IMUPoser dataset: 10 participants, 167 recordings, 1.15 h of real device IMU (left and right wrist, left and right pocket, head) with MoSh'd SMPL ground truth, covering arm raises, walking, boxing, kicking, push-ups, basketball, tennis swings, jumping jacks, hopping, jogging, head movements, sitting. Nothing was trained or tuned on it. Each model is evaluated twice: the pretrained checkpoint straight out of pretraining (<em>base</em>), and the same model after the DIP fine-tune that produces the dip_test numbers (<em>after DIP FT</em>). Metrics follow the paper: SIP error, angular error (MPJRE), positional error (MPJPE), mesh error (MPVPE), velocity error (MPJVE) and jitter (ground-truth jitter on this set is {zs_gt_jit if zs_gt_jit is not None else '–'}, on dip_test 222). Cells read base / after DIP FT.</p>
+<h2>Does the DIP fine-tune transfer? (base vs after DIP FT on the IMUPoser dataset)</h2>
+<p>For eight pretrained models the DIP-fine-tuned version was also evaluated on the collected dataset. Cells read base / after DIP FT. The fine-tune adapts the model to DIP's sensors and calibration: it improves dip_test and costs 1 to 5° SIP on this real-device set, while angular and positional errors move much less.</p>
 <div class="tablewrap"><table><thead><tr><th>pretrained model</th><th class="num">dip_test SIP ° (after FT)</th><th class="num">SIP ° base</th><th class="num">SIP ° after DIP FT</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">MPVPE cm</th><th class="num">MPJVE cm/s</th><th class="num">jitter</th></tr></thead><tbody>{zs_rows}</tbody></table></div>
-<p class="muted">Reference from the paper's own camera-ready results on this dataset (its DIP-fine-tuned LSTM, left wrist + right wrist + right pocket, averaged without end effectors, which is also what the evaluator here ignores): global angular error 22.21°, positional error 8.56 cm, mesh error 10.12 cm (with end effectors: 21.72°, 9.46 cm, 11.39 cm). The paper did not report SIP or a velocity error on this set. DIP fine-tuning helps dip_test but costs 1 to 5° SIP here: the fine-tune adapts to DIP's sensors and calibration, and the pretrained models generalize better to a different real-device setup.</p>
 
 <h2>What was trained on</h2>
 {svg_stack(rows)}
