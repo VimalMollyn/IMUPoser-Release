@@ -166,7 +166,7 @@ EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("
                 ("dl_", "DIP-like subset of the new data (pose-distance / accel rule)")]
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
-LEVER_LABELS = [(r"^swa_", "pretrain checkpoints averaged (top-3) before FT"), (r"_cos$", "cosine LR schedule in pretraining"),
+LEVER_LABELS = [(r"^swa_", "three best checkpoints averaged"), (r"_cos$", "cosine LR schedule in pretraining"),
                 (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
                 (r"_stab$", "grad-norm clip 1.0 + synthetic accel clamped to ±160 m/s² (the L/XL stability settings)"),
                 (r"^cal_.*_bf16$", "fig2 calibration: same recipe in bf16 mixed precision on an RTX 4060 Ti"),
@@ -483,6 +483,10 @@ def build(out_path):
         if zmesh_best is not zbest:
             head += (f" Lowest mesh error: {zmesh_best['zs']['mpvpe']:.2f} cm ({zmesh_best['size']}, {zmesh_best['arm'].rstrip('+')}"
                      f"{' ' + zmesh_best['extra'] if zmesh_best['extra'] else ''}, SIP {zmesh_best['zs']['sip']:.2f}°).")
+        # whole-dataset score of the same model with overlapping evaluation windows (stride fixed on the DIP validation split, not here)
+        st = next((r for r in results_rows("zs_split") if r.get("name") == "swa_xl60_stride31" and r.get("all_sip")), None)
+        if st and zbest["tag"] == "swa_xl60_ctrl":
+            head += f" Same model with overlapping evaluation windows (stride 31): SIP {st['all_sip']:.2f}°, mesh {st['all_mesh']:.2f} cm."
     else:
         head = "No zero-shot evaluation yet."
     head2 = (f"The paper's own DIP-fine-tuned model on this set, same sensors, without end effectors: 22.21°, 8.56 cm, 10.12 cm. "
