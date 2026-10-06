@@ -14,6 +14,7 @@ MODEL=AvatarPoserModel. Knobs: TF_DMODEL/TF_LAYERS/TF_HEADS/TF_FF/TF_DROPOUT (sh
 transformer), AP_IK_W (consistency weight, default 1.0). Windowed inference like the transformer.
 """
 import os
+import math
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
@@ -170,17 +171,36 @@ class AvatarPoserModel(pl.LightningModule):
             self.log(f"{loop}_loss", sum(outputs) / len(outputs), prog_bar=True, batch_size=self.batch_size)
 
     def configure_optimizers(self):
-        # TF_WD: AdamW weight decay (default 1e-4 = every result so far)
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=float(os.environ.get("TF_WD", "1e-4")))
-        # LR_SCHED=cosine: anneal per epoch from TF_LR to TF_LR*LR_MIN_FRAC over the run (default: constant LR,
-        # the recipe every result before 2026-10-04 used). Pre-LN needs no warmup.
+        # TF_WD: AdamW weight decay (default 1e-4 = every result so far). ADAM_BETA2 / ADAM_EPS: Adam's second-moment
+        # decay and epsilon (defaults 0.999 / 1e-8); beta2 0.95 is the usual cure for the slow loss divergence the
+        # 58 M XL model showed at 3e-4 (gradient clipping does not bound an Adam update).
+        beta2 = float(os.environ.get("ADAM_BETA2", "0.999")); eps = float(os.environ.get("ADAM_EPS", "1e-8"))
+        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=float(os.environ.get("TF_WD", "1e-4")),
+                                betas=(0.9, beta2), eps=eps)
+        if beta2 != 0.999 or eps != 1e-8:
+            print(f"[opt] AdamW betas=(0.9, {beta2:g}) eps={eps:g}", flush=True)
+        # LR_SCHED=cosine: anneal from TF_LR to TF_LR*LR_MIN_FRAC over the run (default: constant LR, the recipe every
+        # result before 2026-10-04 used). LR_WARMUP_STEPS=N: linear warmup over the first N optimizer steps (default 0:
+        # pre-LN trains from scratch without it at S/M/L). With warmup the whole schedule is stepped per optimizer step.
         sched = os.environ.get("LR_SCHED", "").lower()
-        if sched in ("", "none", "const", "constant"):
+        warm = int(os.environ.get("LR_WARMUP_STEPS", "0") or 0)
+        if sched in ("", "none", "const", "constant") and warm == 0:
             return opt
-        if sched == "cosine":
+        if sched not in ("", "none", "const", "constant", "cosine"):
+            raise ValueError(f"unknown LR_SCHED={sched!r} (use cosine or leave unset)")
+        min_frac = float(os.environ.get("LR_MIN_FRAC", "0.01"))
+        if warm == 0:   # epoch-level cosine, as before
             T = int(self.trainer.max_epochs) if self.trainer is not None else int(os.environ.get("EPOCHS", "60"))
-            eta_min = self.lr * float(os.environ.get("LR_MIN_FRAC", "0.01"))
-            lr_s = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=T, eta_min=eta_min)
-            print(f"[lr] cosine schedule: {self.lr:g} -> {eta_min:g} over {T} epochs", flush=True)
+            lr_s = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=T, eta_min=self.lr * min_frac)
+            print(f"[lr] cosine schedule: {self.lr:g} -> {self.lr * min_frac:g} over {T} epochs", flush=True)
             return {"optimizer": opt, "lr_scheduler": {"scheduler": lr_s, "interval": "epoch"}}
-        raise ValueError(f"unknown LR_SCHED={sched!r} (use cosine or leave unset)")
+        total = int(self.trainer.estimated_stepping_batches) if self.trainer is not None else warm * 10
+        cos = sched == "cosine"
+        def lam(step):
+            w = min(1.0, (step + 1) / warm)
+            if not cos: return w
+            p = min(1.0, max(0, step - warm) / max(1, total - warm))
+            return w * (min_frac + (1 - min_frac) * 0.5 * (1 + math.cos(math.pi * p)))
+        lr_s = torch.optim.lr_scheduler.LambdaLR(opt, lam)
+        print(f"[lr] warmup {warm} steps to {self.lr:g}" + (f", then cosine to {self.lr * min_frac:g} by step {total}" if cos else ", then constant"), flush=True)
+        return {"optimizer": opt, "lr_scheduler": {"scheduler": lr_s, "interval": "step"}}
