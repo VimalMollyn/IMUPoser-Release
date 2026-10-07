@@ -132,6 +132,16 @@ State on 2026-10-06 16:00 ET:
 
 ## 5b. Results on dip_test (snapshot 2026-10-05 14:00 ET; dip_test SIP, lower is better; seed noise ~0.17)
 
+**Update 2026-10-07 04:00.** The user's "L and XL on the best data recipe" ask paid off on this benchmark: **XL (57 M)
+for 20 epochs on control + DIP-like mocap + DIP-like filtered GV (`dlall_xl20`) = 15.86, the best single model**, 15.67
+with overlapping evaluation windows (stride 31); its epoch-10 snapshot 16.21; L on the same data 16.10, L on the raw-GV
+version 16.07, M 16.04. The bigger model profits from the DIP-like data where it did not from control data (XL60 on
+control was the worst 60-epoch model, 16.60). Ensembles rebuilt with it (stride 31, selected on fval): the fval pick is now
+the 8-member data-diverse set + dlall_xl20 + dlall_l20 + dlallraw_l20 = **15.48** (previous pick 15.65; 2026-09-01
+deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-model set L60 + dlall_xl20 + dlallraw_l20
+15.52. None of this transfers to the real-device set: dlall_xl20 zero-shot 18.04 (plain XL60 control 16.13). XL on the
+raw-GV recipe (`dlallraw_xl20`) is training on local GPU0 (fig2 cannot stream the 711 h sets: I/O-bound).
+
 **Headline (2026-10-05).** Selecting data by closeness to DIP beats adding hours. On the S model at 20 epochs,
 control + ALL of MotionGV filtered (636 h) = 17.06, control + a RANDOM 256 h of it = 16.80, control + the 256 h
 within 20° of DIP's mean pose (moderate accel, non-static) = **16.04**; threshold sweep 15° (61 h) 16.96, 20° 16.04,
