@@ -74,6 +74,24 @@ Per dataset:
 | form-hoi | SOMA/MHR params, 30 fps, 4135 episodes (29 h) | SOMA-X FK (fk_only) -> retarget -> 30 -> 60 fps lerp -> IMU | world frame tilted 3.4° (camera rig): realigned with the ground-plane normal; pose_valid_mask + human-pose QC categories cut (object-only Chamfer/silhouette checks kept); segments < 2 s dropped; MHR identity prepared with batch 1 (SOMA-X caches per-batch buffers) |
 | MotionMillion | 272-dim MotionStreamer rep, 30 fps | closed-form recovery (6D local rots, cumulative heading, integrated xz velocity, root height) -> 30 -> 60 lerp -> IMU | MotionGV excluded; the 7 Motion-X subsets reused from the SMPL-X originals already in the pipeline; their world is already y-up |
 
+### 3e. StayStill (added 2026-10-06 21:30, user request)
+
+[StayStill](https://enekoassets.github.io/staystill.html) (SCA 2026, Zenodo 18741736, MIT): 1634 BVH clips on the
+LaFAN1 rig at 30 fps, 50 subjects, 6.0 h of *idle* motion (2-min standing idle, idle with a phone, 18 idle actions:
+looking around, checking watch/phone, scratching, stretching, yawning, shifting weight). Markerless capture
+(FreeMoCap) retargeted by the authors to LaFAN1; we use the `lafan/` folder. `scripts/1. Preprocessing/staystill_convert.py`
+retargets to SMPL in closed form (`G_smpl[k] = G_rig[m] @ A[k]`). The LaFAN rig has no T-pose reference (its zero pose is
+a straight line along +X), so the 22 constant joint frames `A[k]` are calibrated from the data: bone-direction alignment
+fixes each frame up to a twist about the bone; the pelvis and chest twist are pinned by the hip-to-hip and
+collar-to-collar axes, the upper arms by the elbow hinge plane (mean elbow bend 46–51°, a reliable hinge), and every
+other joint by a zero-mean-twist rule (exact for hinge joints, an assumption for ball joints). The knee hinge planes
+were tried and rejected: in idle data the shin motion is sideways sway, not flexion (mean bend 6°), and they put the
+thighs 55–95° off. Checks on 6229 calibration frames: pelvis, thigh and chest +z face the rig's feet to within 1°
+(head −4°), hip rotations 10–13°, elbows 67–95°, joint positions 4–11 cm from the rig (bone-length and hip-geometry
+differences, not rotation errors). Output 1633 clips, 6.04 h, 2 shards; wrist |acc| p95 5.2 m/s² (actions) /
+2.3 m/s² (idle) — the calmest data in the pool. Runs: `abl_staystill_s20` (control + StayStill) and
+`abl_staystill4_s20` (repeated 4×) on local GPU0.
+
 ## 4. Data (hours at 25 fps)
 
 *filled by the report script — see the web page.*
