@@ -107,7 +107,17 @@ dip_test (DIP-like selection) transfer worse than plain control (base SIP 17.7�
 paper's own DIP-fine-tuned LSTM on this set (22.21° angular / 8.56 cm / 10.12 cm without end effectors). The web page is
 organised around this metric.
 
-State on 2026-10-06 16:00 ET:
+**Update 2026-10-07 19:15 ET — new leader 15.08° / 8.57 cm.** XL60 control was continued for 60 more epochs from its
+`last.ckpt` (fresh AdamW with warmup; fig2, 22 h). On its own the continuation is no better (best checkpoint 16.24, top-3
+average 15.95, dip_test 16.50 vs 16.60), but the **uniform average of the six best checkpoints across both stages**
+(XL60 epochs 28/29/51 + continuation epochs 9/20/29, i.e. combined epochs 28–89) scores **SIP 15.08°, MPJRE 17.48°,
+MPJPE 7.16 cm, mesh 8.57 cm** (`base_swa_xl60_xl60c_ctrl/avg.ckpt`), −0.56° SIP and −0.26 cm mesh over the previous
+leader. It is one weight set, no ensemble, and no choice was made on the dataset (all saved top-3 checkpoints of both
+stages, equal weights). The spread of the averaged checkpoints along the trajectory is what matters: adding nearby
+snapshots never helped (XL60 +last 15.60, L60 wd+cos +40/50 15.82, M120 +60/80/100/110 15.95), averaging across
+60-epoch-apart stages did. Earlier averaged bases for reference: XL60 15.64, L60 wd+cos 15.77, M120 15.84, L60 15.85.
+
+State on 2026-10-06 16:00 ET (superseded leader):
 
 - **Leader: the XL60-control base with its three best checkpoints averaged** (`base_swa_xl60_ctrl/avg.ckpt`): SIP 15.64°,
   MPJRE 18.11°, MPJPE 7.35 cm, mesh 8.83 cm, MPJVE 24.8 cm/s. With overlapping evaluation windows (stride 31, a setting fixed
