@@ -30,6 +30,7 @@ NOISE = 0.17                   # seed-to-seed std of dip_test SIP on this recipe
 CURATED = "CMU,BioMotionLab_NTroje,BMLmovi,KIT,EKUT,Transitions_mocap,HumanEva,SFU,HUMAN4D,SSM_synced,MPI_mosh,MPI_Limits".split(",")
 GROUPS = [("curated-12 AMASS", lambda n: n in CURATED), ("Nymeria", lambda n: n.startswith("Nymeria_")),
           ("BONES-SEED", lambda n: n.startswith("BONES_")), ("form-hoi", lambda n: n.startswith("FORMHOI_")),
+          ("StayStill (idle motion, LaFAN rig)", lambda n: n.startswith("STAYSTILL_")),
           ("MotionMillion mocap subsets (272-dim)", lambda n: n.startswith("MM_")), ("Motion-X (existing SMPL-X)", lambda n: n.startswith("MotionX_")),
           ("MotionGV filtered (5-frame avg, >=2 s, |acc|<=120)", lambda n: n.startswith("MGV_")),
           ("MotionGV unfiltered (>=1 s)", lambda n: n.startswith("MGVRAW_"))]
@@ -150,7 +151,8 @@ def budget_of(tag, base):
     return 60
 
 
-EXTRA_LABELS = [("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
+EXTRA_LABELS = [("abl_staystill4", "+ StayStill ×4 (6 h of idle motion, repeated 4×)"), ("abl_staystill", "+ StayStill (6 h of idle motion)"),
+                ("abl_formhoi", "+ form-hoi"), ("abl_bones", "+ BONES-SEED"), ("abl_mm", "+ MotionMillion mocap + Motion-X"),
                 ("gvfilt", "+ MotionGV filtered (all 636 h)"), ("gvraw", "+ MotionGV unfiltered (724 h)"), ("gvdl20", "+ MotionGV, DIP-like subset (within 20°, 256 h)"),
                 ("gvdl15", "+ MotionGV, DIP-like subset (within 15°)"), ("gvdl25", "+ MotionGV, DIP-like subset (within 25°)"),
                 ("gvrand", "+ MotionGV, RANDOM subset of 256 h (control for the selection)"),
@@ -197,7 +199,7 @@ def lever_ref(tag):
 
 DIPLIKE_CSV = LOGS / "diplike_stats.csv"
 DIPLIKE_GROUPS = [("DIP train (reference)", "dip_train"), ("curated AMASS: CMU", "CMU"), ("curated AMASS: BMLrub", "BioMotionLab"),
-                  ("curated AMASS: KIT", "KIT"), ("Nymeria", "Nymeria_"), ("BONES-SEED", "BONES_"), ("form-hoi", "FORMHOI_"),
+                  ("curated AMASS: KIT", "KIT"), ("Nymeria", "Nymeria_"), ("BONES-SEED", "BONES_"), ("form-hoi", "FORMHOI_"), ("StayStill", "STAYSTILL_"),
                   ("MotionMillion mocap", "MM_"), ("Motion-X", "MotionX_"), ("MotionGV filtered (sample)", "MGV_"),
                   ("MotionGV unfiltered (sample)", "MGVRAW_"), ("leftover AMASS", None)]
 
