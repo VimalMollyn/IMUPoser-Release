@@ -29,6 +29,8 @@ for k, v in sds[0].items():
     else:
         avg[k] = v.clone()  # buffers such as counters/int indices: take the first member's
 base["state_dict"] = avg
+for k in ("optimizer_states", "lr_schedulers"):      # an average has no optimizer state; dropping it makes the file 5x smaller
+    base.pop(k, None)
 ck = out / "avg.ckpt"
 torch.save(base, ck)
 (out / "best_model.txt").write_text(f"{ck.resolve()}\n\naveraged: {[m.name for m in members]}\n")
