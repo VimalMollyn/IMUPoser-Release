@@ -149,8 +149,10 @@ version 16.07, M 16.04. The bigger model profits from the DIP-like data where it
 control was the worst 60-epoch model, 16.60). Ensembles rebuilt with it (stride 31, selected on fval): the fval pick is now
 the 8-member data-diverse set + dlall_xl20 + dlall_l20 + dlallraw_l20 = **15.48** (previous pick 15.65; 2026-09-01
 deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-model set L60 + dlall_xl20 + dlallraw_l20
-15.52. None of this transfers to the real-device set: dlall_xl20 zero-shot 18.04 (plain XL60 control 16.13). XL on the
-raw-GV recipe (`dlallraw_xl20`) is training on local GPU0 (fig2 cannot stream the 711 h sets: I/O-bound).
+15.52. None of this transfers to the real-device set: dlall_xl20 zero-shot 18.04 (plain XL60 control 16.13).
+**2026-10-08:** XL on the raw-GV recipe (`dlallraw_xl20`) = 15.97 (15.77 with stride 31): raw and filtered GV tie at XL as
+they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
+(fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
 **Headline (2026-10-05).** Selecting data by closeness to DIP beats adding hours. On the S model at 20 epochs,
 control + ALL of MotionGV filtered (636 h) = 17.06, control + a RANDOM 256 h of it = 16.80, control + the 256 h
