@@ -107,7 +107,14 @@ dip_test (DIP-like selection) transfer worse than plain control (base SIP 17.7�
 paper's own DIP-fine-tuned LSTM on this set (22.21° angular / 8.56 cm / 10.12 cm without end effectors). The web page is
 organised around this metric.
 
-**Update 2026-10-07 19:15 ET — new leader 15.08° / 8.57 cm.** XL60 control was continued for 60 more epochs from its
+**Update 2026-10-08 22:00 ET — leader 14.66° / 8.43 cm; the spread between averaged stages is the knob.** A third XL
+stage (+60 epochs from the continuation; alone 16.67 best / 16.28 averaged, dip_test 16.32) gives: stages 1+3 (120 epochs
+apart) **14.66 / 8.43**, all three stages (9 checkpoints) 14.87 / 8.50, stages 2+3 15.71, stages 1+2 15.08. The farther
+apart the averaged checkpoints sit on the trajectory, the better the transfer; nearby checkpoints (snapshots, soups of
+adjacent stages) add nothing. The recipe holds at every size: M60 + M60c 15.60 (M60 averaged 16.40), L60 + L60c 15.46
+(15.85), XL 14.66 (15.64). A fourth XL stage and a third L stage are queued to test whether the trend continues.
+
+**Update 2026-10-07 19:15 ET — leader 15.08° / 8.57 cm (superseded).** XL60 control was continued for 60 more epochs from its
 `last.ckpt` (fresh AdamW with warmup; fig2, 22 h). On its own the continuation is no better (best checkpoint 16.24, top-3
 average 15.95, dip_test 16.50 vs 16.60), but the **uniform average of the six best checkpoints across both stages**
 (XL60 epochs 28/29/51 + continuation epochs 9/20/29, i.e. combined epochs 28–89) scores **SIP 15.08°, MPJRE 17.48°,
