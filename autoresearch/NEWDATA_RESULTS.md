@@ -116,6 +116,14 @@ leader. It is one weight set, no ensemble, and no choice was made on the dataset
 stages, equal weights). The spread of the averaged checkpoints along the trajectory is what matters: adding nearby
 snapshots never helped (XL60 +last 15.60, L60 wd+cos +40/50 15.82, M120 +60/80/100/110 15.95), averaging across
 60-epoch-apart stages did. Earlier averaged bases for reference: XL60 15.64, L60 wd+cos 15.77, M120 15.84, L60 15.85.
+**2026-10-08 08:00 — the recipe generalises to L:** L60 continued +60 epochs (local, 10 h; alone: best checkpoint 16.07,
+top-3 average 15.88, dip_test 16.26) and averaged with L60's top-3 = **15.46 / 8.68 cm** (L60 averaged alone 15.85), the
+second-best zero-shot model at 25.6 M parameters. Averaging across two different runs is broken (L60 + L60 wd+cos 23.5,
+M60 + M120 24.3), and adding more nearby snapshots always dilutes, so this is weight averaging along one trajectory with
+60-epoch spread, not a model soup. XL60 with wd + cosine (fig2): dip_test 16.63 (= XL60), zero-shot 16.19 best / 16.25
+averaged — the cosine tail makes the top-3 checkpoints too similar to gain from averaging; the levers that help at L do
+not help at XL. Running: a third XL stage (fig2 GPU0, 9-checkpoint 180-epoch span), M60 continuation (local GPU1),
+continuation of the XL wd+cosine run (fig2 GPU1).
 
 State on 2026-10-06 16:00 ET (superseded leader):
 

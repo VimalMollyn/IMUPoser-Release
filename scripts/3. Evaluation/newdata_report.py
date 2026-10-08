@@ -169,6 +169,7 @@ EXTRA_LABELS = [("abl_staystill4", "+ StayStill ×4 (6 h of idle motion, repeate
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
 LEVER_LABELS = [(r"^swa_xl60_xl60c", "XL60 + its 60-epoch continuation, six best checkpoints averaged (epochs 28–89)"),
+                (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c", "run + its 60-epoch continuation, six best checkpoints averaged (cross-stage)"),
                 (r"^swa_", "three best checkpoints averaged"), (r"_cos$", "cosine LR schedule in pretraining"),
                 (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
                 (r"_stab$", "grad-norm clip 1.0 + synthetic accel clamped to ±160 m/s² (the L/XL stability settings)"),
@@ -191,7 +192,8 @@ def lever_ref(tag):
     if tag.endswith("_wd1e2"): return tag[:-6]
     if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
-    if tag == "swa_xl60_xl60c_ctrl": return "scale_xl60_ctrl"
+    mc = re.match(r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c\d*_ctrl$", tag)   # cross-stage averages: compare with the first stage's run
+    if mc: return f"scale_{mc.group(1)}60_ctrl"
     if tag.startswith("swa_"):   # swa_<run>: the run is scale_<run> for the size grid, else the bare tag (control_s1, ...)
         return "scale_" + tag[4:] if (CK / f"base_scale_{tag[4:]}").exists() else tag[4:]
     m = re.match(r"^ft[a-z0-9]*_(.+)$", tag)
