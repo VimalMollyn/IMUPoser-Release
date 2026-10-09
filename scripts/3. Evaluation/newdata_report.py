@@ -172,6 +172,7 @@ LEVER_LABELS = [(r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_ctrl$", "run +
                 (r"^swa_(xl|l|m|s)60c_(xl|l|m|s)60c2_ctrl$", "continuation stages 2 + 3 only, six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_ctrl$", "stages 1 + 3 (120 epochs apart), six best checkpoints averaged"),
                 (r"^swa_xl60_xl60c_ctrl$", "XL60 + its 60-epoch continuation, six best checkpoints averaged (epochs 28–89)"),
+                (r"^swa_xl60wdcos_xl60wdcosc_ctrl$", "XL60 wd+cosine + its continuation, six best checkpoints averaged (cross-stage)"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_ctrl$", "run + its 60-epoch continuation, six best checkpoints averaged (cross-stage)"),
                 (r"^swa_", "three best checkpoints averaged"), (r"_cos$", "cosine LR schedule in pretraining"),
                 (r"_wd1e2$", "AdamW weight decay 1e-2 in pretraining (default 1e-4)"),
@@ -195,6 +196,8 @@ def lever_ref(tag):
     if tag.endswith("_wd1e2"): return tag[:-6]
     if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
+    if tag == "swa_xl60wdcos_xl60wdcosc_ctrl": return "scale_xl60_ctrl_wdcos"
+    if tag == "swa_xl60_wdcos_c": return "scale_xl60_wdcos_c"
     mc = re.match(r"^swa_(xl|l|m|s)60(c\d*)?(_(xl|l|m|s)60c\d*)+_ctrl$", tag)   # cross-stage averages: compare with the first stage's run
     if mc: return f"scale_{mc.group(1)}60_ctrl"
     if tag.startswith("swa_"):   # swa_<run>: the run is scale_<run> for the size grid, else the bare tag (control_s1, ...)
