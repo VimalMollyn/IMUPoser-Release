@@ -169,6 +169,13 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-09 18:00 — the M data recipe catches the XL; ensemble 15.42.** On the DIP-like recipe at M (20 epochs):
+cosine schedule 15.92, grad-clip + accel-clamp 15.88 (constant-LR baseline 16.04, XL 15.86). L on the full treatment set
+(676 h, no selection) 16.02 vs 16.99 for L on control. The fval-selected ensemble is now 11 members = **15.42** (fval
+12.62); a 5-model set (both XL data models + M cosine + L treatment + L raw) reads 15.36, and three models (both XL + M
+cosine) 15.43. None of these transfer: zero-shot 17.8–19.1. The combined cosine + stability M recipe and a cosine XL
+recipe are queued.
+
 **Update 2026-10-09 06:00 — the original question, re-converted data, S at 60 epochs:** control + ALL new mocap (676 h,
 natural mix, `treatment2_s1`) = **16.43** vs 17.32 / 17.50 for control S60: the new data now helps the small model by
 about a degree on dip_test (the first-conversion arms had been neutral; the matrix-space interpolation fix is what
