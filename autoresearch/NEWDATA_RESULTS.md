@@ -169,6 +169,14 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-09 06:00 — the original question, re-converted data, S at 60 epochs:** control + ALL new mocap (676 h,
+natural mix, `treatment2_s1`) = **16.43** vs 17.32 / 17.50 for control S60: the new data now helps the small model by
+about a degree on dip_test (the first-conversion arms had been neutral; the matrix-space interpolation fix is what
+changed). The DIP-like recipe at S (`dlall_s20`, 20 epochs) reads 16.13, close to M (16.04) and L (16.10). A control-only
+second stage after the broad pretraining (`curr_trt2ctrl_s20`) gives 16.47, no gain on dip_test, but it restores the
+zero-shot transfer that the new data costs (treatment2_s1 19.61 → 16.84, vs 17.33 for control S60): the narrowing stage is
+the first thing that makes new data and real-device transfer compatible, and it is worth trying at L/XL.
+
 **Headline (2026-10-05).** Selecting data by closeness to DIP beats adding hours. On the S model at 20 epochs,
 control + ALL of MotionGV filtered (636 h) = 17.06, control + a RANDOM 256 h of it = 16.80, control + the 256 h
 within 20° of DIP's mean pose (moderate accel, non-static) = **16.04**; threshold sweep 15° (61 h) 16.96, 20° 16.04,
