@@ -169,6 +169,11 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-09 19:30 — third L stage.** L60 → +60 → +60 (dip_test 16.31 / 16.26 / 16.34; the third stage alone
+16.20 best / 15.95 averaged zero-shot). Cross-stage averages: 1+3 **15.44 / 8.62**, 1+2+3 15.45, 1+2 15.46, 2+3 15.79. At
+L the recipe saturates near 15.45 once two stages are averaged; the extra spread that took XL from 15.08 to 14.66 adds
+nothing here. A fourth L stage is running anyway (local GPU1) to close the question; the fourth XL stage lands tonight.
+
 **Update 2026-10-09 18:20 — the curriculum works at L: one model good on both benchmarks.** The DIP-like L20
 (`dlall_l20`: dip_test 16.10, zero-shot 18.67) continued for 20 epochs on control only (`curr_dlallctrl_l20`) reads
 **dip_test 16.06 and zero-shot 16.12 / 8.76 cm** as a single checkpoint, i.e. the dip_test of the data recipe with the
