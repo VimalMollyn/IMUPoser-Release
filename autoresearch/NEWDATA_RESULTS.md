@@ -169,6 +169,12 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-09 18:20 — the curriculum works at L: one model good on both benchmarks.** The DIP-like L20
+(`dlall_l20`: dip_test 16.10, zero-shot 18.67) continued for 20 epochs on control only (`curr_dlallctrl_l20`) reads
+**dip_test 16.06 and zero-shot 16.12 / 8.76 cm** as a single checkpoint, i.e. the dip_test of the data recipe with the
+transfer of a control model (XL60 control: 16.60 / 16.13 / 9.14). Its mesh error is the lowest of any single checkpoint.
+Averaging and the XL version are next.
+
 **Update 2026-10-09 18:00 — the M data recipe catches the XL; ensemble 15.42.** On the DIP-like recipe at M (20 epochs):
 cosine schedule 15.92, grad-clip + accel-clamp 15.88 (constant-LR baseline 16.04, XL 15.86). L on the full treatment set
 (676 h, no selection) 16.02 vs 16.99 for L on control. The fval-selected ensemble is now 11 members = **15.42** (fval
