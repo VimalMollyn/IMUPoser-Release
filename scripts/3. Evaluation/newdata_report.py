@@ -168,7 +168,12 @@ EXTRA_LABELS = [("abl_staystill4", "+ StayStill ×4 (6 h of idle motion, repeate
                 ("dl_", "DIP-like subset of the new data (pose-distance / accel rule)")]
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
-LEVER_LABELS = [(r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_ctrl$", "run + two 60-epoch continuations, nine best checkpoints averaged (three stages, 180 epochs)"),
+LEVER_LABELS = [(r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c3_ctrl$", "stages 1 + 4 (180 epochs apart), six best checkpoints averaged"),
+                (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "stages 1 + 3 + 4, nine best checkpoints averaged"),
+                (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "all four stages, twelve best checkpoints averaged (240 epochs)"),
+                (r"^swa_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "continuation stages 3 + 4 only, six best checkpoints averaged"),
+                (r"^swa_(xl|l|m|s)60c_(xl|l|m|s)60c3_ctrl$", "continuation stages 2 + 4 only (120 epochs apart), six best checkpoints averaged"),
+                (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_ctrl$", "run + two 60-epoch continuations, nine best checkpoints averaged (three stages, 180 epochs)"),
                 (r"^swa_(xl|l|m|s)60c_(xl|l|m|s)60c2_ctrl$", "continuation stages 2 + 3 only, six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_ctrl$", "stages 1 + 3 (120 epochs apart), six best checkpoints averaged"),
                 (r"^swa_xl60_xl60c_ctrl$", "XL60 + its 60-epoch continuation, six best checkpoints averaged (epochs 28–89)"),

@@ -169,6 +169,13 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-09 23:30 — fourth XL stage: leader 14.59 / 8.42, and the trend saturates.** Stages 1+4 (180 epochs apart)
+average to **14.59 / 8.42 cm**, 0.07 better than 1+3; 1+3+4 14.84, all four stages (12 checkpoints) 14.89, 2+4 15.47,
+3+4 16.19, stage 4 alone 16.44 best / 16.30 averaged (dip_test 16.41). Pair spacing 60 / 120 / 180 epochs gives 15.08 /
+14.66 / 14.59, so the gain flattens near 14.6. Every good pair contains stage 1: its epoch-28..51 checkpoints carry the
+transfer, and the recipe is early checkpoints plus one far-away late stage rather than spread by itself. No further XL
+stages are planned; the XXL (102 M) is the remaining size experiment.
+
 **Update 2026-10-09 19:30 — third L stage.** L60 → +60 → +60 (dip_test 16.31 / 16.26 / 16.34; the third stage alone
 16.20 best / 15.95 averaged zero-shot). Cross-stage averages: 1+3 **15.44 / 8.62**, 1+2+3 15.45, 1+2 15.46, 2+3 15.79. At
 L the recipe saturates near 15.45 once two stages are averaged; the extra spread that took XL from 15.08 to 14.66 adds
