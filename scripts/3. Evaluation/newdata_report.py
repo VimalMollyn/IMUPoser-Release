@@ -313,7 +313,10 @@ def collect_runs():
             base = dict(base, epochs_done=min(base.get("epochs_done", 0), snap), status="done",
                         val={e: v for e, v in base.get("val", {}).items() if e < snap},
                         **({"best_epoch": int(m.group(1)), "best_val": float(m.group(2))} if m else {}))
-            runs.append(mk_run(tag, d, base))
+            r = mk_run(tag, d, base)
+            # the snapshot is a different checkpoint from the source run's best: only its own zero-shot log counts
+            r["zs"] = parse_eval(d / f"eval_imuposer_zs_snap{snap}.log"); r["zs_tto"] = None
+            runs.append(r)
         else:
             runs.append(dict(mk_run(tag, d, base), ft_variant=True))   # same pretrained model, FT recipe varied
     for d in sorted(CK.glob("base_*")):
