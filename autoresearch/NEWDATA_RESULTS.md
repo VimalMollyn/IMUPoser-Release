@@ -169,6 +169,14 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-10 14:30 — XXL (102 M, d1024 / 8 layers / FF 4096), 60 epochs on control (user ask).** dip_test
+**15.91**: the best control-data model on the DIP benchmark (XL60 16.60, L60 16.31, M60 16.32), level with the best
+data-recipe singles (15.86 / 15.92). Zero-shot: epoch-30 snapshot 15.83 / 9.12, best-by-validation checkpoint (epoch 54)
+16.01 / 9.02, top-3 average (epochs 42/54/56) 15.91 / 8.94, top-3 + the epoch-30 snapshot **15.58 / 8.80**. The XXL's
+three best checkpoints are all late, so its plain average gains less than the XL's (whose top-3 spans epochs 28–51);
+adding the one early snapshot recovers the gain, the same early-plus-late pattern as the XL stages. Its 60-epoch
+continuation is running on fig2 for the cross-stage pair (expected ~2026-10-11 evening).
+
 **Update 2026-10-10 12:30 — the S20 data-mix and ablation block (fig2, re-converted data).** dip_test: new mocap at 0.5×
 its natural share 17.06, 2× 16.87 (natural 16.62); control + form-hoi 17.32, + MotionMillion mocap + Motion-X 16.56,
 + BONES-SEED + form-hoi 16.91; reweighted treatment (form-hoi ×3, Nymeria ×2) 16.50; control + the 13 leftover AMASS-style

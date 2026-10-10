@@ -168,7 +168,8 @@ EXTRA_LABELS = [("abl_staystill4", "+ StayStill ×4 (6 h of idle motion, repeate
                 ("dl_", "DIP-like subset of the new data (pose-distance / accel rule)")]
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
-LEVER_LABELS = [(r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c3_ctrl$", "stages 1 + 4 (180 epochs apart), six best checkpoints averaged"),
+LEVER_LABELS = [(r"^swa_xxl60snap_ctrl$", "three best checkpoints (epochs 42–56) + the epoch-30 snapshot averaged"),
+                (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c3_ctrl$", "stages 1 + 4 (180 epochs apart), six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "stages 1 + 3 + 4, nine best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "all four stages, twelve best checkpoints averaged (240 epochs)"),
                 (r"^swa_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "continuation stages 3 + 4 only, six best checkpoints averaged"),
@@ -202,6 +203,7 @@ def lever_ref(tag):
     if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
     if tag == "swa_xl60wdcos_xl60wdcosc_ctrl": return "scale_xl60_ctrl_wdcos"
+    if tag == "swa_xxl60snap_ctrl": return "scale_xxl60_ctrl"
     if tag == "swa_xl60_wdcos_c": return "scale_xl60_wdcos_c"
     mc = re.match(r"^swa_(xl|l|m|s)60(c\d*)?(_(xl|l|m|s)60c\d*)+_ctrl$", tag)   # cross-stage averages: compare with the first stage's run
     if mc: return f"scale_{mc.group(1)}60_ctrl"
