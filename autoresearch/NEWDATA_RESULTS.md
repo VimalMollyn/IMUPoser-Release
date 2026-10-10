@@ -169,6 +169,14 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-10 12:30 — the S20 data-mix and ablation block (fig2, re-converted data).** dip_test: new mocap at 0.5×
+its natural share 17.06, 2× 16.87 (natural 16.62); control + form-hoi 17.32, + MotionMillion mocap + Motion-X 16.56,
++ BONES-SEED + form-hoi 16.91; reweighted treatment (form-hoi ×3, Nymeria ×2) 16.50; control + the 13 leftover AMASS-style
+sets (~45 h) 17.35; control S20 17.50 / 17.32. So at S every new-mocap arm helps dip_test by 0.2–1.0 and the mix ratio is
+flat; the DIP-like selected set (16.13) remains the best S recipe. Zero-shot all 17.4–19.8 (control S20 17.03): none
+transfers, the same as every other new-data arm. Ensembles of the best trajectory averages (XL 1+4, L all-four, M, curriculum
+L) add only ~0.1 on the split (14.73–14.82 on P3–10 vs 14.85 for the leader alone; 14.49 on all).
+
 **Update 2026-10-10 11:30 — fourth L stage closes the L series at ~15.4.** Stage 4 alone 16.43 best / 16.14 averaged
 (dip_test 16.33). Cross-stage: all four stages (12 checkpoints) **15.37 / 8.62**, 2+4 15.44, 1+3 15.44, 1+2 15.46, 1+3+4
 15.47, 1+4 15.62, 2+3 15.79. At L every reasonable combination lands between 15.4 and 15.6; the XL's extra gain from the
