@@ -169,6 +169,12 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-10 23:00 — the curriculum L with two control stages: 15.32 / 8.60, best L-size model.** The narrowed
+DIP-like L (`curr_dlallctrl_l20`) continued for 40 more epochs on control (`curr_dlallctrl_l20c`: dip_test 16.21, zero-shot
+15.79 best / 15.53 averaged) and the two control stages averaged together read **15.32 / 8.60 cm**, ahead of the plain L
+four-stage average (15.37 / 8.62) with a dip_test of 16.06–16.21 behind it. The cross-stage recipe therefore works on the
+curriculum trajectory too, and this is the model to pick at 26 M parameters for both benchmarks.
+
 **Update 2026-10-10 22:30 — cosine on the XL data recipe: best single model 15.75 (15.58 with stride 31).** `dlall_xl20_cos`
 beats the constant-LR XL (15.86 / 15.67), as cosine did at M. Ensembles: the fval pick stays the 11-member set (12.62 →
 15.42; adding this model reads 12.63 → 15.40); a 6-model set of the three XL data models' best two + M cosine + L treatment
