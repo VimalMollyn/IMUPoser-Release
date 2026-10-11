@@ -169,6 +169,11 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-11 11:00 — leader 14.43 / 8.36 cm.** Applying the early + late rule to the original XL trajectory: stages
+1 + 4 (six best checkpoints) plus stage 1's epoch-20 snapshot, seven checkpoints averaged uniformly, zero-shot **SIP 14.43,
+angular 16.58, positional 7.03 cm, mesh 8.36 cm** (previous leader 14.59 / 8.42). Within the first run alone, the top-3
+plus that one snapshot reads 15.45 against 15.64 without it.
+
 **Update 2026-10-11 10:00 — early + late, not spread: the averaging recipe resolved within one run.** An XL60 control
 re-run saving a snapshot every 10 epochs (fig2; dip_test 16.36, its best-by-validation checkpoints are late: epochs 39/45/56)
 gives, zero-shot: best checkpoint 16.71; top-3 15.94; top-3 + the LATE snapshots 40/50 15.73; top-3 + the EARLY snapshots
