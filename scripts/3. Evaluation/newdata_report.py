@@ -169,6 +169,15 @@ EXTRA_LABELS = [("abl_staystill4", "+ StayStill ×4 (6 h of idle motion, repeate
 # SOTA levers: variations of the training / fine-tuning recipe on top of a finished base. They are single models
 # (so they may lead the leaderboard) but are kept out of the scaling charts and the data ablations.
 LEVER_LABELS = [(r"^swa_xxl60snap_ctrl$", "three best checkpoints (epochs 42–56) + the epoch-30 snapshot averaged"),
+                (r"^swa_xl60_snap20_xl60c3_ctrl$", "XL stages 1 + 4 + stage 1's epoch-20 snapshot, seven checkpoints averaged (early + late)"),
+                (r"^swa_xl60_snap20_ctrl$", "XL60 top-3 (epochs 28/29/51) + its epoch-20 snapshot, four checkpoints averaged"),
+                (r"^swa_xl60snap_early_ctrl$", "snapshot re-run: top-3 (39/45/56) + early snapshots 10/20/30 (early + late)"),
+                (r"^swa_xl60snap_late_ctrl$", "snapshot re-run: top-3 + late snapshots 40/50"),
+                (r"^swa_xl60snap_all_ctrl$", "snapshot re-run: top-3 + all five snapshots"),
+                (r"^swa_xl60snap_mid_ctrl$", "snapshot re-run: top-3 + snapshots 20/30"),
+                (r"^swa_xl60snap_earlyonly_ctrl$", "snapshot re-run: early snapshots 10/20/30 alone"),
+                (r"^swa_xl60snap_2030_ctrl$", "snapshot re-run: top-3 + snapshots 20/30/50"),
+                (r"^swa_xl60snap_ctrl$", "snapshot re-run: three best checkpoints averaged"),
                 (r"^swa_curr_dlallctrl_l20_l20c$", "curriculum L: its two control-only stages (20 + 40 epochs), six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c3_ctrl$", "stages 1 + 4 (180 epochs apart), six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "stages 1 + 3 + 4, nine best checkpoints averaged"),
@@ -205,6 +214,8 @@ def lever_ref(tag):
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
     if tag == "swa_xl60wdcos_xl60wdcosc_ctrl": return "scale_xl60_ctrl_wdcos"
     if tag == "swa_xxl60snap_ctrl": return "scale_xxl60_ctrl"
+    if tag in ("swa_xl60_snap20_xl60c3_ctrl", "swa_xl60_snap20_ctrl"): return "scale_xl60_ctrl"
+    if tag.startswith("swa_xl60snap"): return "scale_xl60_ctrl_snap"
     if tag == "swa_curr_dlallctrl_l20_l20c": return "curr_dlallctrl_l20"
     if tag == "swa_xl60_wdcos_c": return "scale_xl60_wdcos_c"
     mc = re.match(r"^swa_(xl|l|m|s)60(c\d*)?(_(xl|l|m|s)60c\d*)+_ctrl$", tag)   # cross-stage averages: compare with the first stage's run
