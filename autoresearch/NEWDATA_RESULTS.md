@@ -181,6 +181,16 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-11 17:05 — the curriculum does not pay at XL.** The DIP-like XL (`dlall_xl20`, dip_test 15.86,
+zero-shot 18.04) was narrowed on control for 20 epochs (`curr_dlallctrl_xl20`: dip_test 15.77, zero-shot 16.32 best /
+16.36 top-3, its best epochs being 0-2) and then for 40 more (`curr_dlallctrl_xl20c`: dip_test 16.01, zero-shot 16.00
+best / 15.73 top-3). The two control stages averaged together (six checkpoints) read 15.96 / 8.64 cm, i.e. worse than the
+same recipe at L (15.32 / 8.60) and far behind the plain XL control averages (14.43-14.89). At XL the data recipe's
+head start is not recovered by narrowing; the leaders stay the control-only runs with early + late averaging.
+dip_test is held (15.77 / 16.01 vs 15.75 best single), so the curriculum remains a dip_test-neutral, zero-shot-negative
+lever at this size. The XXL on the DIP-like selection of the raw data (`dlallraw_xxl20`, 710.6 h kept) started on the
+local GPU at 16:45 (3.4 it/s, ~95 min per epoch, ~32 h + FT).
+
 **Update 2026-10-11 15:40 — leader 14.26 / 8.33 cm, and it is an L (26 M) from a single 60-epoch run.** The L60 control
 re-run with 10-epoch snapshots (dip_test 16.55; top-3 at epochs 39/40/49) gives, zero-shot: best checkpoint 16.05; top-3
 15.55; top-3 + late snapshots 40/50 15.35; **top-3 + early snapshots 10/20/30 14.26 / 8.33 cm** (angular 16.74, positional
