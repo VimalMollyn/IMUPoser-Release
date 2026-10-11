@@ -169,6 +169,14 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-11 10:00 — early + late, not spread: the averaging recipe resolved within one run.** An XL60 control
+re-run saving a snapshot every 10 epochs (fig2; dip_test 16.36, its best-by-validation checkpoints are late: epochs 39/45/56)
+gives, zero-shot: best checkpoint 16.71; top-3 15.94; top-3 + the LATE snapshots 40/50 15.73; top-3 + the EARLY snapshots
+10/20/30 **15.30**; all eight 15.39; early snapshots alone 16.60. So what the cross-stage averages were buying is the
+combination of early checkpoints (epochs 10–30) with late ones; late-only spread adds little and early-only is bad. A
+single 60-epoch run with early snapshots recovers most of the two-stage gain (15.30 vs 15.08) at no extra training cost.
+Next: the original XL trajectory's epoch-20 snapshot added to the 14.59 leader; the same test at L (local).
+
 **Update 2026-10-10 23:00 — the curriculum L with two control stages: 15.32 / 8.60, best L-size model.** The narrowed
 DIP-like L (`curr_dlallctrl_l20`) continued for 40 more epochs on control (`curr_dlallctrl_l20c`: dip_test 16.21, zero-shot
 15.79 best / 15.53 averaged) and the two control stages averaged together read **15.32 / 8.60 cm**, ahead of the plain L
