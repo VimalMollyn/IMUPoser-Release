@@ -169,7 +169,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
-**Update 2026-10-11 11:00 — leader 14.43 / 8.36 cm.** Applying the early + late rule to the original XL trajectory: stages
+**Update 2026-10-11 15:40 — leader 14.26 / 8.33 cm, and it is an L (26 M) from a single 60-epoch run.** The L60 control
+re-run with 10-epoch snapshots (dip_test 16.55; top-3 at epochs 39/40/49) gives, zero-shot: best checkpoint 16.05; top-3
+15.55; top-3 + late snapshots 40/50 15.35; **top-3 + early snapshots 10/20/30 14.26 / 8.33 cm** (angular 16.74, positional
+6.95, velocity 22.0 cm/s, jitter 117: the best on every metric); all eight 14.42; early snapshots alone 14.73. The early +
+late effect is much larger at L (−1.3 vs the top-3) than at XL (−0.6), and it needs no continuation stages: one run with
+three extra snapshots beats the four-stage XL series (14.43). Queued: the same at M, and a far-apart second stage of this
+L run for early + farther-late.
+
+**Update 2026-10-11 11:00 — leader 14.43 / 8.36 cm (superseded).** Applying the early + late rule to the original XL trajectory: stages
 1 + 4 (six best checkpoints) plus stage 1's epoch-20 snapshot, seven checkpoints averaged uniformly, zero-shot **SIP 14.43,
 angular 16.58, positional 7.03 cm, mesh 8.36 cm** (previous leader 14.59 / 8.42). Within the first run alone, the top-3
 plus that one snapshot reads 15.45 against 15.64 without it.
