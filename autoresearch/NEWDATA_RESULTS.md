@@ -34,6 +34,18 @@ lengths) and windows are sliced lazily in the DataLoader workers; the page cache
 bit-equivalent to the in-RAM loader (max |d output| 5e-7 over 400 random samples, all aux targets). Training is
 GPU-bound anyway (97 % util at ~5.4 it/s on the TITAN V), so throughput is unchanged.
 
+**fig2 and the 700-hour-plus recipes (fixed 2026-10-11 16:10).** Shards cost 828 bytes per frame, so a
+treatment+MGVRAW_ recipe (~1,400 h) is ~110 GB of memmaps, far more than fig2's 62 GB of RAM can cache; every
+random window became a USB-exFAT read and fig2 ran those recipes several times slower than the local box
+(control-sized recipes, ~20 GB, were fine). Fix: fig2's root drive is an NVMe (Force MP600) with 139 GB free, so
+all shards except the filtered MGV_* sets (110 GB; MGV_* are symlinks back to the USB drive) were copied to
+`/home/vimal/imuposer_fast/shards_processed_imuposer_25fps` (29 GB left on that drive). The loader already honours
+`IMUPOSER_SHARD_DIR` (`shards.py: shard_root_for`), and the queue runner forwards every queue-line variable, so a
+fig2 queue line just appends `IMUPOSER_SHARD_DIR=/home/vimal/imuposer_fast/shards_processed_imuposer_25fps`.
+First user: `allraw_l20` (treatment + raw MotionGV, no selection, L 20 ep) moved from the local GPU0 queue to fig2
+GPU1 (after the XXL continuation). Its first-epoch it/s is the verification; a stand-alone loader benchmark was
+not run.
+
 **Speed-ups tested.** `PRECISION=16-mixed` is 2x *slower* on the TITAN X Pascal (no fp16 tensor cores); on the
 Volta it was not tested so as not to disturb the control run. Both arms run fp32 with the identical recipe.
 
