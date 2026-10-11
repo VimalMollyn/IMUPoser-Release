@@ -169,6 +169,12 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-10 22:30 — cosine on the XL data recipe: best single model 15.75 (15.58 with stride 31).** `dlall_xl20_cos`
+beats the constant-LR XL (15.86 / 15.67), as cosine did at M. Ensembles: the fval pick stays the 11-member set (12.62 →
+15.42; adding this model reads 12.63 → 15.40); a 6-model set of the three XL data models' best two + M cosine + L treatment
++ L raw + the fine-tuned XXL control reads **15.31**, the lowest dip_test number so far, and the XXL is the first
+control-data member that helps a data-recipe ensemble. Zero-shot 17.71 / 18.01: a dip_test-only win like every data recipe.
+
 **Update 2026-10-10 14:30 — XXL (102 M, d1024 / 8 layers / FF 4096), 60 epochs on control (user ask).** dip_test
 **15.91**: the best control-data model on the DIP benchmark (XL60 16.60, L60 16.31, M60 16.32), level with the best
 data-recipe singles (15.86 / 15.92). Zero-shot: epoch-30 snapshot 15.83 / 9.12, best-by-validation checkpoint (epoch 54)
