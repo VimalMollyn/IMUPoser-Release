@@ -82,6 +82,18 @@ for spec in "$@"; do
   BEST="$(head -1 "$dir/best_model.txt" 2>/dev/null)"; [ -f "$BEST" ] || BEST="$dir/last.ckpt"
   [ -n "$SNAP_EP" ] && BEST="$dir/snap_ep$SNAP_EP.ckpt"
   echo "[$(date -Is)] base done: $BEST"
+  # SKIP_FT=1 (queue-line knob): zero-shot-only runs. Score the best base checkpoint on the collected IMUPoser dataset
+  # (the primary metric) into base_<tag>/eval_imuposer_zs.log and skip the DIP fine-tune entirely.
+  if echo "${extra:-}" | tr ' ' '\n' | grep -qx 'SKIP_FT=1'; then
+    extra_model="$(echo "${extra:-}" | tr ' ' '\n' | grep -v '^EPOCHS=\|^LR_SCHED=\|^LR_MIN_FRAC=\|^LR_WARMUP_STEPS=\|^ADAM_\|^TF_LR=\|^DATASET_REPEAT=\|^DATASET_FRACTION=\|^DATASET_KEEP=\|^CONTINUE_FROM=\|^TF_WD=\|^GRAD_CLIP=\|^ACC_CLAMP=\|^BASE_FROM=\|^SNAPSHOT_\|^FT_\|^SKIP_FT=\|^LIMIT_TRAIN_BATCHES=\|^GEN_COND_DROP=\|^GEN_T_\|^GEN_GEOM_W=\|^GEN_STATS_BATCHES=' | grep -v '^$' | paste -sd' ' -)"
+    echo "[$(date -Is)] SKIP_FT: zero-shot eval of $BEST on imuposer_all.pt (env: $extra_model)"
+    ( cd "$REPO" && env $extra_model CUDA_VISIBLE_DEVICES="$GPU" IMUPOSER_25FPS_DIR="$DD" \
+        uv run python "scripts/3. Evaluation/offline_fit.py" --data imuposer_all.pt --combo lw_rw_rp \
+        --members "$BEST" --iters 0 --device 0 > "$dir/eval_imuposer_zs.log" 2>&1 )
+    grep -E "SIP" "$dir/eval_imuposer_zs.log" | head -3
+    echo "[$(date -Is)] DONE $tag (zero-shot only)"
+    continue
+  fi
 
   # model-architecture env (TF_DMODEL/TF_LAYERS/...) must also reach the FT stage and the evaluator, which
   # rebuild the model from env; the base-stage EPOCHS / LR schedule / data weighting overrides must NOT

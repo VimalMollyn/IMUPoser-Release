@@ -1,0 +1,383 @@
+r"""
+Generative pose models for sparse-IMU tracking on one shared DiT-style backbone (re-implementation, 2026-10-12).
+
+  RegressIMUPoser       deterministic regression with this backbone (the architecture control)
+  FlowIMUPoser          conditional flow matching / rectified flow (Lipman et al. 2023, Liu et al. 2023):
+                        y_t = (1-t) z + t y1, the network predicts the velocity v = y1 - z, Euler/midpoint sampling
+  DiffusionV2IMUPoser   variance-preserving diffusion with the cosine alpha/sigma schedule, v-prediction
+                        (Salimans & Ho 2022) and deterministic DDIM sampling
+
+Time convention for both generative models: t in [0, 1], t = 0 is pure noise, t = 1 is clean data.
+
+What is different from the June DiffusionIMUPoser (and why that one was a weak test):
+  * pose targets are standardised per r6d dimension (mean/std measured on the training set at fit start and
+    stored as buffers), so unit noise is commensurate with the data instead of swamping dimensions whose std
+    is 0.05-0.3 (which made almost every diffusion step a "pure noise" step and the sampler useless);
+  * the time step enters every block through adaLN-zero modulation (DiT) instead of one additive embedding;
+  * the training target is the velocity / v, not x0 (an x0 head copies its input at low noise, so sampling
+    errors were never corrected);
+  * t is drawn logit-normal (SD3) by default so the mid-path, where the network has to do the work, is
+    sampled most;
+  * checkpoint selection uses the POSE error of a deterministic few-step estimate (the same MSE + FK + IK loss
+    as AvatarPoserModel), not the noisy training objective;
+  * the FK/IK geometric loss is applied to the x1 estimate implied by the prediction, so the generative models
+    get exactly the geometric supervision the regression baseline gets;
+  * eval exposes the solver, the number of steps, K-sample averaging (the conditional mean, the right point
+    estimate for a mean-error metric) and classifier-free guidance.
+
+Env knobs (train): TF_DMODEL / TF_HEADS / TF_LAYERS / TF_FF / TF_DROPOUT / TF_BILSTM (backbone, as AvatarPoser),
+  GEN_T_DIST=logitnormal|uniform, GEN_T_M / GEN_T_S (logit-normal location / scale, 0 / 1),
+  GEN_GEOM_W (weight of the FK/IK loss on the x1 estimate, 1), GEN_COND_DROP (p of zeroing the IMU condition
+  for classifier-free guidance, 0), GEN_STD_MIN (floor of the per-dim std, 0.05), GEN_STATS_BATCHES (40),
+  GEN_VAL_STEPS (steps of the validation estimate, 1), AP_IK_W (IK term weight, 1), TF_LR, TF_WD, LR_SCHED, ...
+Env knobs (eval): GEN_STEPS (8), GEN_SOLVER=euler|midpoint (flow; diffusion always DDIM), GEN_SAMPLE_AVG (K, 1),
+  GEN_CFG (guidance scale, 1 = off), GEN_SEED (0), TF_EVAL_WINDOW / TF_EVAL_STRIDE (as the transformer).
+
+forward(imu, lens) returns the r6d pose (B, T, 144) like every other model, so offline_fit.py / eval_dip.py
+work unchanged; offline_fit detects the class from the `gen_kind` buffer.
+"""
+import os
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import lightning.pytorch as pl
+
+from imuposer.smpl.parametricModel import ParametricModel
+from imuposer.math.angular import r6d_to_rotation_matrix
+from imuposer.config import Config
+from .TransformerIMUPoser import _SinusoidalPE, windowed_inference
+from .AvatarPoserModel import AvatarPoserModel, _IMU_JOINTS
+
+
+def _env_f(k, d): return float(os.environ.get(k, d))
+def _env_i(k, d): return int(os.environ.get(k, d))
+
+
+class _TimeEmb(nn.Module):
+    """Sinusoidal embedding of t in [0, 1] (scaled by 1000) followed by a 2-layer MLP."""
+    def __init__(self, d):
+        super().__init__()
+        self.d = d
+        self.mlp = nn.Sequential(nn.Linear(d, d), nn.SiLU(), nn.Linear(d, d))
+
+    def forward(self, t):                      # t: (B,) float in [0, 1]
+        half = self.d // 2
+        freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device).float() / half)
+        a = (t.float() * 1000.0)[:, None] * freqs[None, :]
+        e = torch.cat([a.sin(), a.cos()], dim=-1)
+        if e.shape[-1] < self.d:
+            e = F.pad(e, (0, self.d - e.shape[-1]))
+        return self.mlp(e)
+
+
+class _Block(nn.Module):
+    """Pre-LN transformer block with adaLN-zero modulation (DiT): scale/shift/gate per sub-layer from the time embedding."""
+    def __init__(self, d, nhead, ff, dropout):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d, elementwise_affine=False)
+        self.attn = nn.MultiheadAttention(d, nhead, dropout=dropout, batch_first=True)
+        self.norm2 = nn.LayerNorm(d, elementwise_affine=False)
+        self.linear1 = nn.Linear(d, ff)        # names match nn.TransformerEncoderLayer so offline_fit reads FF off the weights
+        self.linear2 = nn.Linear(ff, d)
+        self.drop = nn.Dropout(dropout)
+        self.ada = nn.Linear(d, 6 * d)
+        nn.init.zeros_(self.ada.weight); nn.init.zeros_(self.ada.bias)
+
+    def forward(self, h, c, pad):              # h: (B,T,d)  c: (B,d)  pad: (B,T) True = padded
+        s1, b1, g1, s2, b2, g2 = self.ada(F.silu(c)).unsqueeze(1).chunk(6, dim=-1)
+        x = self.norm1(h) * (1 + s1) + b1
+        a = self.attn(x, x, x, key_padding_mask=pad, need_weights=False)[0]
+        h = h + g1 * self.drop(a)
+        x = self.norm2(h) * (1 + s2) + b2
+        h = h + g2 * self.drop(self.linear2(self.drop(F.gelu(self.linear1(x)))))
+        return h
+
+
+class _GenNet(nn.Module):
+    """[x_t ⊕ imu] per frame -> sinusoidal PE -> N adaLN blocks -> adaLN final norm -> (biLSTM) -> MLP head."""
+    def __init__(self, n_in, n_out, d_model=256, nhead=8, n_layers=4, dim_ff=1024, dropout=0.1, use_bilstm=False):
+        super().__init__()
+        self.inp = nn.Linear(n_in, d_model)    # `net.inp.weight` -> offline_fit reads d_model off it
+        self.pe = _SinusoidalPE(d_model)
+        self.t_emb = _TimeEmb(d_model)
+        self.enc = nn.Module()
+        self.enc.layers = nn.ModuleList([_Block(d_model, nhead, dim_ff, dropout) for _ in range(n_layers)])
+        self.norm_out = nn.LayerNorm(d_model, elementwise_affine=False)
+        self.ada_out = nn.Linear(d_model, 2 * d_model)
+        nn.init.zeros_(self.ada_out.weight); nn.init.zeros_(self.ada_out.bias)
+        self.use_bilstm = use_bilstm
+        head_in = d_model
+        if use_bilstm:
+            self.bilstm = nn.LSTM(d_model, d_model, num_layers=1, batch_first=True, bidirectional=True)
+            head_in = d_model * 2
+        self.out = nn.Sequential(nn.Linear(head_in, d_model), nn.GELU(), nn.Linear(d_model, n_out))
+
+    def forward(self, x, t, pad):
+        full = pad.all(dim=1)                  # a fully padded row would make attention NaN; its output is zeroed anyway
+        if full.any():
+            pad = pad & ~full[:, None]
+        c = self.t_emb(t)
+        h = self.pe(self.inp(x))
+        for blk in self.enc.layers:
+            h = blk(h, c, pad)
+        s, b = self.ada_out(F.silu(c)).unsqueeze(1).chunk(2, dim=-1)
+        h = self.norm_out(h) * (1 + s) + b
+        if self.use_bilstm:
+            h, _ = self.bilstm(h)
+        y = self.out(h)
+        return y.masked_fill(pad.unsqueeze(-1), 0.0)
+
+
+class _GenPoser(pl.LightningModule):
+    KIND = 0                                   # 0 regression, 1 flow matching, 2 diffusion (stored in the `gen_kind` buffer)
+
+    def __init__(self, config: Config):
+        super().__init__()
+        self.config = config
+        self.n_cond = 12 * len(config.joints_set)
+        self.n_pose_output = len(config.pred_joints_set) * (6 if config.r6d else 9)
+        self.batch_size = config.batch_size
+        self.generative = self.KIND != 0
+        n_in = self.n_cond + (self.n_pose_output if self.generative else 0)
+        self.net = _GenNet(n_in, self.n_pose_output,
+                           d_model=_env_i("TF_DMODEL", 256), nhead=_env_i("TF_HEADS", 8), n_layers=_env_i("TF_LAYERS", 4),
+                           dim_ff=_env_i("TF_FF", 1024), dropout=_env_f("TF_DROPOUT", 0.1), use_bilstm=bool(os.environ.get("TF_BILSTM")))
+        self.bodymodel = ParametricModel(config.og_smpl_model_path, device=config.device)
+        self.loss = nn.MSELoss() if config.loss_type == "mse" else nn.L1Loss()
+        self.ik_w = _env_f("AP_IK_W", 1.0)
+        self.lr = _env_f("TF_LR", 3e-4)
+        self.register_buffer("imu_joints", torch.tensor(_IMU_JOINTS), persistent=False)
+        self.register_buffer("gen_kind", torch.tensor(self.KIND))
+        self.register_buffer("x_mean", torch.zeros(self.n_pose_output))
+        self.register_buffer("x_std", torch.ones(self.n_pose_output))
+        self.register_buffer("stats_ready", torch.tensor(0))
+        self.t_dist = os.environ.get("GEN_T_DIST", "logitnormal").lower()
+        self.t_m, self.t_s = _env_f("GEN_T_M", 0.0), _env_f("GEN_T_S", 1.0)
+        self.geom_w = _env_f("GEN_GEOM_W", 1.0)
+        self.cond_drop = _env_f("GEN_COND_DROP", 0.0)
+        self.std_min = _env_f("GEN_STD_MIN", 0.05)
+        self.val_steps = _env_i("GEN_VAL_STEPS", 1)
+        self.training_step_outputs, self.validation_step_outputs, self.test_step_outputs = [], [], []
+        self.save_hyperparameters(ignore=["config"])
+        n_par = sum(p.numel() for p in self.parameters())
+        print(f"[gen] {type(self).__name__}: {n_par/1e6:.2f} M params, t_dist={self.t_dist} geom_w={self.geom_w} "
+              f"cond_drop={self.cond_drop} val_steps={self.val_steps}", flush=True)
+
+    # ---- helpers -------------------------------------------------------------------------------------------
+    def _pad_mask(self, lens, T, dev):
+        return torch.arange(T, device=dev)[None, :] >= torch.as_tensor(lens, device=dev)[:, None]
+
+    def _norm(self, x): return (x - self.x_mean) / self.x_std
+    def _denorm(self, y): return y * self.x_std + self.x_mean
+
+    def on_fit_start(self):
+        self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
+
+    def on_train_start(self):
+        # the train dataloader exists from here on (fit_loop.setup_data ran); a fresh run measures the target stats once,
+        # a resumed / warm-started run keeps the buffers that came with its checkpoint
+        if self.generative and int(self.stats_ready.item()) == 0:
+            self._measure_stats()
+
+    @torch.no_grad()
+    def _measure_stats(self):
+        """Per-dimension mean / std of the r6d targets over the first GEN_STATS_BATCHES training batches (valid frames only)."""
+        dl = self.trainer.train_dataloader
+        if dl is None:
+            dl = self.trainer.datamodule.train_dataloader()
+        n_b = _env_i("GEN_STATS_BATCHES", 40)
+        s = torch.zeros(self.n_pose_output, dtype=torch.float64); ss = torch.zeros_like(s); cnt = 0
+        for i, batch in enumerate(dl):
+            _, target, lens, _ = batch
+            x = target[:, :, :self.n_pose_output]
+            m = torch.arange(x.shape[1])[None, :] < torch.as_tensor(lens)[:, None]
+            x = x[m].double()
+            s += x.sum(0); ss += (x * x).sum(0); cnt += x.shape[0]
+            if i + 1 >= n_b:
+                break
+        del dl
+        mean = s / max(cnt, 1)
+        std = (ss / max(cnt, 1) - mean * mean).clamp(min=0).sqrt().clamp(min=self.std_min)
+        self.x_mean.copy_(mean.float().to(self.device)); self.x_std.copy_(std.float().to(self.device)); self.stats_ready.fill_(1)
+        print(f"[gen] target stats from {cnt} frames: std min {std.min():.3f} median {std.median():.3f} max {std.max():.3f} "
+              f"(floor {self.std_min}); |mean| max {mean.abs().max():.3f}", flush=True)
+
+    def _pose_loss(self, imu, pred_pose, target_pose, B, T):
+        """AvatarPoser's default supervision: r6d MSE + FK joint-position MSE + IK sensor-orientation consistency."""
+        loss = self.loss(pred_pose, target_pose)
+        grot, jpos = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(pred_pose).view(-1, 216))[:2]
+        tgrot, tjpos = self.bodymodel.forward_kinematics(pose=r6d_to_rotation_matrix(target_pose).view(-1, 216))[:2]
+        loss = loss + self.loss(jpos, tjpos)
+        obs_ori = imu[:, :, 15:60].reshape(B, T, 5, 3, 3)
+        present = obs_ori.abs().flatten(3).sum(-1) > 0
+        pred_so = grot[:, self.imu_joints].view(B, T, 5, 3, 3)
+        m = present.unsqueeze(-1).unsqueeze(-1)
+        if m.any():
+            loss = loss + self.ik_w * self.loss(pred_so * m, obs_ori * m)
+        return loss
+
+    def _sample_t(self, B, dev):
+        if self.t_dist == "uniform":
+            return torch.rand(B, device=dev)
+        return torch.sigmoid(torch.randn(B, device=dev) * self.t_s + self.t_m)       # logit-normal
+
+    # ---- the three objectives (subclasses override _train_loss / _sample_step) ------------------------------
+    def _train_loss(self, batch):
+        imu, target, lens, _ = batch
+        x1 = target[:, :, :self.n_pose_output]
+        B, T, _ = x1.shape
+        pad = self._pad_mask(lens, T, x1.device)
+        if not self.generative:
+            pred = self.net(imu, torch.zeros(B, device=x1.device), pad)
+            return self._pose_loss(imu, pred, x1, B, T)
+        if self.cond_drop > 0:
+            keep = (torch.rand(B, device=x1.device) >= self.cond_drop).float()[:, None, None]
+            imu = imu * keep
+        y1 = self._norm(x1)
+        z = torch.randn_like(y1)
+        t = self._sample_t(B, x1.device)
+        y_t, target_v = self._path(y1, z, t)
+        pred = self.net(torch.cat([y_t, imu], dim=-1), t, pad)
+        target_v = target_v.masked_fill(pad.unsqueeze(-1), 0.0)
+        loss = self.loss(pred, target_v)
+        if self.geom_w > 0:
+            x1_hat = self._denorm(self._x1_from(y_t, pred, t)).masked_fill(pad.unsqueeze(-1), 0.0)
+            loss = loss + self.geom_w * self._pose_loss(imu, x1_hat, x1, B, T)
+        return loss
+
+    def _path(self, y1, z, t):          # -> (y_t, training target)
+        raise NotImplementedError
+
+    def _x1_from(self, y_t, pred, t):   # x1 estimate implied by the prediction at time t
+        raise NotImplementedError
+
+    def _sample_step(self, y, imu, t0, t1, pad, w):
+        raise NotImplementedError
+
+    def _predict(self, y, imu, t, pad, w):
+        """Network prediction with optional classifier-free guidance (w > 1 mixes in an unconditional prediction)."""
+        B = y.shape[0]
+        tt = torch.full((B,), float(t), device=y.device)
+        p = self.net(torch.cat([y, imu], dim=-1), tt, pad)
+        if w != 1.0:
+            pu = self.net(torch.cat([y, torch.zeros_like(imu)], dim=-1), tt, pad)
+            p = pu + w * (p - pu)
+        return p
+
+    @torch.no_grad()
+    def _sample(self, imu, lens, steps, gen, w):
+        B, T, _ = imu.shape
+        dev = imu.device
+        pad = self._pad_mask(lens, T, dev)
+        y = torch.randn(B, T, self.n_pose_output, generator=gen, device=dev)
+        ts = torch.linspace(0.0, 1.0, steps + 1).tolist()
+        for i in range(steps):
+            y = self._sample_step(y, imu, ts[i], ts[i + 1], pad, w)
+        return self._denorm(y).masked_fill(pad.unsqueeze(-1), 0.0)
+
+    def _sample_avg(self, imu, lens, steps=None, K=None, seed=None, w=None):
+        steps = _env_i("GEN_STEPS", 8) if steps is None else steps
+        K = _env_i("GEN_SAMPLE_AVG", 1) if K is None else K
+        seed = _env_i("GEN_SEED", 0) if seed is None else seed
+        w = _env_f("GEN_CFG", 1.0) if w is None else w
+        acc = None
+        for k in range(K):
+            gen = torch.Generator(device=imu.device); gen.manual_seed(seed + k)
+            s = self._sample(imu, lens, steps, gen, w)
+            acc = s if acc is None else acc + s
+        return acc / K
+
+    # ---- Lightning API ----------------------------------------------------------------------------------------
+    def forward(self, imu_inputs, imu_lens):
+        if not self.generative:
+            f = lambda c, l: self.net(c, torch.zeros(c.shape[0], device=c.device), self._pad_mask(l, c.shape[1], c.device))
+        else:
+            f = lambda c, l: self._sample_avg(c, l)
+        T = imu_inputs.size(1)
+        W = _env_i("TF_EVAL_WINDOW", 125)
+        if self.training or T <= W:
+            return f(imu_inputs, imu_lens)
+        return windowed_inference(f, imu_inputs, imu_lens, W)
+
+    def training_step(self, batch, batch_idx):
+        loss = self._train_loss(batch)
+        self.log("training_step_loss", loss.item(), batch_size=self.batch_size)
+        self.training_step_outputs.append(loss.item())
+        return {"loss": loss}
+
+    def validation_step(self, batch, batch_idx):
+        # POSE error of a deterministic estimate (fixed noise, GEN_VAL_STEPS steps) with the regression loss, so the
+        # best-val checkpoint is the best POSE model, comparable with AvatarPoser's validation_step_loss
+        imu, target, lens, _ = batch
+        x1 = target[:, :, :self.n_pose_output]
+        B, T, _ = x1.shape
+        if self.generative:
+            pred = self._sample_avg(imu, lens, steps=self.val_steps, K=1, seed=10_000 + batch_idx, w=1.0)
+        else:
+            pred = self.net(imu, torch.zeros(B, device=x1.device), self._pad_mask(lens, T, x1.device))
+        loss = self._pose_loss(imu, pred, x1, B, T)
+        self.log("validation_step_loss", loss.item(), batch_size=self.batch_size)
+        self.validation_step_outputs.append(loss.item())
+        return {"loss": loss}
+
+    def on_train_epoch_end(self):
+        self._epoch_end(self.training_step_outputs, "train"); self.training_step_outputs.clear()
+
+    def on_validation_epoch_end(self):
+        self._epoch_end(self.validation_step_outputs, "val"); self.validation_step_outputs.clear()
+
+    def _epoch_end(self, outputs, loop):
+        if outputs:
+            self.log(f"{loop}_loss", sum(outputs) / len(outputs), prog_bar=True, batch_size=self.batch_size)
+
+    configure_optimizers = AvatarPoserModel.configure_optimizers
+
+
+class RegressIMUPoser(_GenPoser):
+    """Deterministic regression on the DiT-style backbone: the architecture control for the two generative models."""
+    KIND = 0
+
+
+class FlowIMUPoser(_GenPoser):
+    """Rectified flow: y_t = (1-t) z + t y1, v = y1 - z. Sampling integrates dy/dt = v from t=0 (noise) to t=1 (data)."""
+    KIND = 1
+
+    def _path(self, y1, z, t):
+        tt = t[:, None, None]
+        return (1 - tt) * z + tt * y1, y1 - z
+
+    def _x1_from(self, y_t, v, t):
+        return y_t + (1 - t[:, None, None]) * v
+
+    def _sample_step(self, y, imu, t0, t1, pad, w):
+        h = t1 - t0
+        v = self._predict(y, imu, t0, pad, w)
+        if os.environ.get("GEN_SOLVER", "euler").lower() == "midpoint" and t1 < 1.0 + 1e-9 and h > 0:
+            y_mid = y + 0.5 * h * v
+            v = self._predict(y_mid, imu, t0 + 0.5 * h, pad, w)
+        return y + h * v
+
+
+class DiffusionV2IMUPoser(_GenPoser):
+    """VP diffusion, cosine schedule alpha_t = sin(pi t / 2), sigma_t = cos(pi t / 2) (t = 1 clean), v-prediction, DDIM."""
+    KIND = 2
+
+    @staticmethod
+    def _ab(t):
+        return math.sin(0.5 * math.pi * t), math.cos(0.5 * math.pi * t)
+
+    def _path(self, y1, z, t):
+        a = torch.sin(0.5 * math.pi * t)[:, None, None]; s = torch.cos(0.5 * math.pi * t)[:, None, None]
+        return a * y1 + s * z, a * z - s * y1
+
+    def _x1_from(self, y_t, v, t):
+        a = torch.sin(0.5 * math.pi * t)[:, None, None]; s = torch.cos(0.5 * math.pi * t)[:, None, None]
+        return a * y_t - s * v
+
+    def _sample_step(self, y, imu, t0, t1, pad, w):
+        a0, s0 = self._ab(t0); a1, s1 = self._ab(t1)
+        v = self._predict(y, imu, t0, pad, w)
+        y1_hat = a0 * y - s0 * v
+        z_hat = s0 * y + a0 * v
+        return a1 * y1_hat + s1 * z_hat          # deterministic DDIM update (eta = 0)

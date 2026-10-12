@@ -63,7 +63,7 @@ def get_dataset(config=None, test_only=False):
     model = config.model
     # load the dataset (Recon/Staged share the same GlobalModelDataset; they only
     # differ in the auxiliary target appended via config.aux_target)
-    if model in ("GlobalModelIMUPoser", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser", "CodebookIMUPoser", "ActivityIMUPoser"):
+    if model in ("GlobalModelIMUPoser", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "FlowIMUPoser", "DiffusionV2IMUPoser", "RegressIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser", "CodebookIMUPoser", "ActivityIMUPoser"):
         train_files, val_files, test_files = get_split_files(config)
 
         test_dataset = GlobalModelDataset("test", config, data_files=test_files)
@@ -92,7 +92,7 @@ def get_dataset(config=None, test_only=False):
 def get_datamodule(config):
     model = config.model
     # load the dataset
-    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser", "CodebookIMUPoser", "ActivityIMUPoser"]:
+    if model in ["GlobalModelIMUPoser", "GlobalModelIMUPoserFineTuneDIP", "ReconIMUPoser", "StagedIMUPoser", "TransformerIMUPoser", "DiffusionIMUPoser", "FlowIMUPoser", "DiffusionV2IMUPoser", "RegressIMUPoser", "AvatarPoserModel", "CNN1DIMUPoser", "CodebookIMUPoser", "ActivityIMUPoser"]:
         return IMUPoserDataModule(config)
     else:
         print("Enter a valid model")
