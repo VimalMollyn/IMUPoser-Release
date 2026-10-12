@@ -181,6 +181,17 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-11 18:10 — XXL continuation: early + late works at XXL too, but XXL stays behind L and XL.** The
+XXL60 control continued for 60 more epochs on fig2 (`scale_xxl60c_ctrl`, best val checkpoints at epochs 21/52/59):
+dip_test 16.19 (stage 1: 15.91), zero-shot 16.69 best / 16.35 top-3, i.e. the continuation alone is worse than stage 1 on
+both metrics, as it was for XL and L. Averaging across the stages recovers it: stages 1 + 2 (six checkpoints) 15.45 /
+8.76 cm, and adding the stage-1 epoch-30 snapshot (seven) **15.13 / 8.63 cm**, the best XXL so far (stage-1 top-3 +
+snapshot: 15.58). So the one-trajectory early + late rule holds at 102 M as well, but the XXL still trails the XL
+(14.43) and the L leader (14.26) at a far higher cost (fp32 on fig2, 33 h per 60 epochs). XXL is not worth it for the
+zero-shot target; its only lead is dip_test with the control data (15.91). Infrastructure: the fig2 NVMe shard copy is
+verified in production (`allraw_l20` streams 1,400 h at 2.11 it/s, GPU 97 %, zero I/O wait), and 19.1 GB of finished
+checkpoints were archived off the T7 drive (27 GB free) ahead of the XXL-on-raw run's checkpoints.
+
 **Update 2026-10-11 17:05 — the curriculum does not pay at XL.** The DIP-like XL (`dlall_xl20`, dip_test 15.86,
 zero-shot 18.04) was narrowed on control for 20 epochs (`curr_dlallctrl_xl20`: dip_test 15.77, zero-shot 16.32 best /
 16.36 top-3, its best epochs being 0-2) and then for 40 more (`curr_dlallctrl_xl20c`: dip_test 16.01, zero-shot 16.00

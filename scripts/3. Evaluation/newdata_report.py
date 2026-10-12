@@ -185,6 +185,9 @@ LEVER_LABELS = [(r"^swa_xxl60snap_ctrl$", "three best checkpoints (epochs 42–5
                 (r"^swa_l60snap_ctrl$", "snapshot re-run: three best checkpoints averaged"),
                 (r"^swa_curr_dlallctrl_l20_l20c$", "curriculum L: its two control-only stages (20 + 40 epochs), six best checkpoints averaged"),
                 (r"^swa_curr_dlallctrl_xl20_xl20c$", "curriculum XL: its two control-only stages (20 + 40 epochs), six best checkpoints averaged"),
+                (r"^swa_xxl60c_ctrl$", "continuation (stage 2): three best checkpoints averaged"),
+                (r"^swa_xxl60_xxl60c_ctrl$", "stages 1 + 2 (60 epochs apart), six best checkpoints averaged"),
+                (r"^swa_xxl60_snap30_xxl60c_ctrl$", "stages 1 + 2 + the epoch-30 snapshot (early + late), seven checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c3_ctrl$", "stages 1 + 4 (180 epochs apart), six best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "stages 1 + 3 + 4, nine best checkpoints averaged"),
                 (r"^swa_(xl|l|m|s)60_(xl|l|m|s)60c_(xl|l|m|s)60c2_(xl|l|m|s)60c3_ctrl$", "all four stages, twelve best checkpoints averaged (240 epochs)"),
@@ -219,7 +222,7 @@ def lever_ref(tag):
     if tag.endswith("_stab"): return tag[:-5]
     if tag.startswith("cal_") and (tag.endswith("_bf16") or tag.endswith("_fp32")): return "scale_" + tag[4:-5]
     if tag == "swa_xl60wdcos_xl60wdcosc_ctrl": return "scale_xl60_ctrl_wdcos"
-    if tag == "swa_xxl60snap_ctrl": return "scale_xxl60_ctrl"
+    if tag in ("swa_xxl60snap_ctrl", "swa_xxl60_xxl60c_ctrl", "swa_xxl60_snap30_xxl60c_ctrl"): return "scale_xxl60_ctrl"
     if tag in ("swa_xl60_snap20_xl60c3_ctrl", "swa_xl60_snap20_ctrl"): return "scale_xl60_ctrl"
     if tag.startswith("swa_xl60snap"): return "scale_xl60_ctrl_snap"
     if tag.startswith("swa_l60snap"): return "scale_l60_ctrl_snap"
