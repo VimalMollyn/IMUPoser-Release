@@ -188,8 +188,8 @@ L20 regression (16.47). The user's call ("just train for longer") was right: the
 lever surfaced in the same round: sampling t from a logit-normal shifted to the noise end (`GEN_T_M=-2`) gives 18.10 at 20 epochs
 against 23.65 with the default distribution, i.e. most of the slow start was the time distribution starving the few-step regime of
 training signal. Once trained, the sampler matters, which it did not at 20 epochs: the same S60 checkpoint scores 18.85 with one
-step, 16.89 with 8 and **16.55 with 16 Euler steps**, i.e. the multi-step flow integration is worth 2.3 degrees over the model's own
-one-step (regression-like) estimate. Running: the S60 flow continues to 120 epochs (chained), a 60-epoch flow run with the
+step, 16.89 with 8, 16.55 with 16 and **16.39 with 32 Euler steps** (flattening), i.e. the multi-step flow integration is worth 2.5
+degrees over the model's own one-step (regression-like) estimate; at S size that already beats the L20 regression (16.47). Running: the S60 flow continues to 120 epochs (chained), a 60-epoch flow run with the
 shifted t (local), flow M60 / diffusion S60 / regression S60 on fig2 (each with a chained continuation to 120).
 
 **Update 2026-10-12 04:30 — generative pose models re-implemented (user ask); first round at S20: behind regression, undertrained.**
