@@ -181,6 +181,25 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-12 04:30 — generative pose models re-implemented (user ask); first round at S20: behind regression, undertrained.**
+The user judged the June diffusion test suspect and asked for flow matching as its own method, zero-shot only, no budget limit.
+`src/imuposer/models/Transformers/GenIMUPoser.py` now holds three objectives on one DiT-style backbone (pre-LN transformer, adaLN-zero
+time modulation, same TF_* size knobs): a regression control, flow matching (rectified flow, velocity target, logit-normal t,
+Euler / midpoint) and diffusion v2 (VP cosine schedule, v-prediction, DDIM). Targets are standardised per r6d dimension (median std
+0.105: the June model added unit noise to data a tenth that size), the FK / IK loss is applied to the implied x1 estimate, checkpoints
+are selected on the pose error of a deterministic estimate, and `run_newdata.sh SKIP_FT=1` scores the base checkpoint zero-shot and
+skips the DIP fine-tune. First round, S (d256 / 4 layers, 5.15 M with the modulation), 20 epochs on control, zero-shot SIP:
+regression control 17.28 (production S20: 17.03, so the backbone is on par); diffusion v2 19.07 best (16 steps; 1 step 19.37,
+8 steps 19.65); flow matching 23.05 best (8 midpoint steps; 1 step 23.84, 8 Euler 23.65). Sampling knobs move either model by
+under a degree, so sampling is not the bottleneck: the velocity networks' validation pose error at epoch 19 was 0.076 (flow) and
+0.067 (diffusion) against 0.035 for regression and still falling steeply, while regression had plateaued by epoch 10. Single
+samples also swing with the noise seed (diffusion, 8 steps: 19.65 with seed 0, 24.19 with seed 1), i.e. the one-step estimate has not
+learned to cancel its noise input, which is the signature of an under-trained generative model. Averaging four samples was worse
+on the full dataset (22.00) although it beats every single seed on a 6-sequence check (15.70 vs 16.1-17.9) with the built-in,
+r6d and chordal means agreeing, so the averaging code is right and the full-dataset number is being re-derived. Running now
+(all zero-shot only): flow S60, flow S20 with t shifted to the noise end (local), regression S60 + diffusion S60 (fig2 GPU0),
+flow M60 (fig2 GPU1).
+
 **Update 2026-10-11 18:10 — XXL continuation: early + late works at XXL too, but XXL stays behind L and XL.** The
 XXL60 control continued for 60 more epochs on fig2 (`scale_xxl60c_ctrl`, best val checkpoints at epochs 21/52/59):
 dip_test 16.19 (stage 1: 15.91), zero-shot 16.69 best / 16.35 top-3, i.e. the continuation alone is worse than stage 1 on
