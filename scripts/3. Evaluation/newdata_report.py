@@ -615,6 +615,20 @@ def build(out_path):
         cls = "ok" if d < -NOISE else "bad" if d > NOISE else "muted"
         return f"<span class='{cls}'>{d:+.2f}</span>"
     levers = sorted([r for r in runs if r.get("lever") and not r.get("interim")], key=lambda r: (r["eval"]["sip"] if r["eval"] else 99, r["tag"]))
+    # generative models (flow matching / diffusion v2 / regression control on the same backbone): kind=gen_eval rows
+    gen = results_rows("gen_eval")
+    _order = {"regression": 0, "flow matching": 1, "diffusion v2": 2}
+    gen.sort(key=lambda r: (_order.get(r.get("objective"), 9), r.get("sip", 99)))
+    gen_rows = ""
+    for r in gen:
+        gen_rows += (f"<tr><td>{html.escape(r.get('objective', ''))}</td><td class='mono'>{html.escape(r.get('tag', ''))}</td><td>{html.escape(r.get('training', ''))}</td>"
+                     f"<td>{html.escape(r.get('config', ''))}</td><td class='num'>{fmt(r.get('sip'))}</td><td class='num'>{fmt(r.get('mpjre'))}</td>"
+                     f"<td class='num'>{fmt(r.get('mpjpe'))}</td><td class='num'>{fmt(r.get('mesh'))}</td><td class='num'>{r.get('jitter', '–')}</td></tr>")
+    _g_best = {}
+    for r in gen:
+        o = r.get("objective"); 
+        if r.get("sip") is not None and (o not in _g_best or r["sip"] < _g_best[o]["sip"]): _g_best[o] = r
+    gen_summary = "; ".join(f"{o}: best {fmt(r['sip'])} ({html.escape(r.get('config',''))}, {html.escape(r.get('tag',''))})" for o, r in sorted(_g_best.items(), key=lambda kv: _order.get(kv[0], 9)))
     lever_rows = ""
     for r in levers:
         ref = by_tag.get(lever_ref(r["tag"]) or "")
@@ -753,6 +767,11 @@ dl{{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0
 <tr><td>reduced rigid-body PD refiner (no contacts), stiffness 40</td><td class="num">16.00</td><td class="num">19.21</td><td class="num">7.69</td><td class="num">9.52</td><td class="num">23.8</td><td class="num">78</td></tr>
 </tbody></table></div>
 <p class="muted">PIP's optimizer was fed what our pose-only model does not predict: joint velocities from finite differences of the predicted joints, foot contacts from foot speed, the root stood on PIP's floor; the simulator runs at 50 Hz on 2× upsampled predictions because PIP's 60 Hz gains diverge at 25 Hz. With those gains the character tracks the network pose almost exactly, so the pose does not move; the optimizer's documented benefits (translation, foot sliding, jitter of jittery inputs) are not what root-relative pose metrics measure.</p>
+
+<h2>Generative pose models: flow matching and diffusion against regression (zero-shot)</h2>
+<p>User ask (2026-10-12): the June diffusion test was judged suspect, and flow matching is a different method. All three objectives were re-implemented on one shared backbone (pre-LN transformer with adaLN-zero time modulation, the DiT recipe; same width / depth / FF knobs as the production transformer): a <b>regression</b> control, <b>flow matching</b> (rectified flow, velocity target, logit-normal t, Euler / midpoint sampling) and <b>diffusion v2</b> (variance-preserving cosine schedule, v-prediction, DDIM). Pose targets are standardised per r6d dimension (median std 0.105: the June model added unit noise to data a tenth that size, so nearly every denoising step was a pure-noise step), the FK / IK geometric loss is applied to the x1 estimate, and checkpoints are selected on the pose error of a deterministic estimate. Every row is zero-shot on the collected IMUPoser dataset, no fine-tune; the eval configuration (steps, solver, mean of K samples, window stride) is a test-time choice on the same checkpoint.</p>
+<p><b>Best per objective:</b> {gen_summary if gen_summary else "pending"}. Production regression at the same size and budget (S20 control, original transformer): 17.03.</p>
+<div class="tablewrap"><table><thead><tr><th>objective</th><th>run</th><th>training</th><th>eval configuration</th><th class="num">SIP °</th><th class="num">MPJRE °</th><th class="num">MPJPE cm</th><th class="num">mesh cm</th><th class="num">jitter</th></tr></thead><tbody>{gen_rows}</tbody></table></div>
 
 <h2>The DIP benchmark (after the DIP fine-tune): scaling laws</h2>
 <p>Secondary benchmark. Pretrain, fine-tune on real DIP training subjects, test on the held-out DIP subjects. Model size: S = d256/4 layers (3.3 M), M = d384/6 (10.9 M), L = d512/8 (25.6 M), XL = d768/8 (~58 M), XXL = d1024/8, FF 4096 (~105 M); same optimizer (AdamW 3e-4), effective batch 256, dropout 0.1. XL is the exception: at 3e-4 it diverged, so XL runs use 1.5e-4 with a 1000-step warmup and beta2 0.95 (L and XL also use gradient clipping and the acceleration clamp), and the XL-on-control run was trained on fig2 in bf16, which the calibration runs put at about +0.1. Data: curated-12 AMASS (35 h), control = curated-12 + Nymeria (267 h), treatment = control + BONES-SEED + form-hoi + MotionMillion mocap + Motion-X (676 h). Round markers are a fixed 20-epoch budget (each run sees every window 20 times); squares are the full 60-epoch schedule.</p>
