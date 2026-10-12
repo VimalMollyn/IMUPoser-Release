@@ -178,6 +178,8 @@ LEVER_LABELS = [(r"^swa_xxl60snap_ctrl$", "three best checkpoints (epochs 42–5
                 (r"^swa_xl60snap_earlyonly_ctrl$", "snapshot re-run: early snapshots 10/20/30 alone"),
                 (r"^swa_xl60snap_2030_ctrl$", "snapshot re-run: top-3 + snapshots 20/30/50"),
                 (r"^swa_xl60snap_ctrl$", "snapshot re-run: three best checkpoints averaged"),
+                (r"^swa_xl60snapc_ctrl$", "snapshot re-run continuation (stage 2): three best checkpoints averaged"),
+                (r"^swa_xl60snap_early_snapc_ctrl$", "snapshot re-run: early 10/20/30 + top-3, + continuation top-3 (nine averaged)"),
                 (r"^swa_l60snap_early_ctrl$", "snapshot re-run: top-3 (39/40/49) + early snapshots 10/20/30 (early + late)"),
                 (r"^swa_l60snap_late_ctrl$", "snapshot re-run: top-3 + late snapshots 40/50"),
                 (r"^swa_l60snap_all_ctrl$", "snapshot re-run: top-3 + all five snapshots"),
@@ -224,6 +226,7 @@ def lever_ref(tag):
     if tag == "swa_xl60wdcos_xl60wdcosc_ctrl": return "scale_xl60_ctrl_wdcos"
     if tag in ("swa_xxl60snap_ctrl", "swa_xxl60_xxl60c_ctrl", "swa_xxl60_snap30_xxl60c_ctrl"): return "scale_xxl60_ctrl"
     if tag in ("swa_xl60_snap20_xl60c3_ctrl", "swa_xl60_snap20_ctrl"): return "scale_xl60_ctrl"
+    if tag == "swa_xl60snapc_ctrl": return "scale_xl60_ctrl_snap_c"
     if tag.startswith("swa_xl60snap"): return "scale_xl60_ctrl_snap"
     if tag.startswith("swa_l60snap"): return "scale_l60_ctrl_snap"
     if tag == "swa_curr_dlallctrl_l20_l20c": return "curr_dlallctrl_l20"
