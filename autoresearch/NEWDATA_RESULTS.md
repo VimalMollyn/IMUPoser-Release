@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-12 10:00 — flow matching beats regression once it is trained long enough: S60 flow 16.89 zero-shot.** The
+60-epoch flow model (`gen_flow_s60_ctrl`, same S backbone, 8 Euler steps, one sample) scores **16.89 / 10.51 cm**, ahead of the
+regression control at S20 (17.28), the production S20 (17.03) and the production M60 single checkpoint (17.31), and close to the
+L20 regression (16.47). The user's call ("just train for longer") was right: the S20 flow model was simply under-trained. A second
+lever surfaced in the same round: sampling t from a logit-normal shifted to the noise end (`GEN_T_M=-2`) gives 18.10 at 20 epochs
+against 23.65 with the default distribution, i.e. most of the slow start was the time distribution starving the few-step regime of
+training signal. Running: the S60 flow continues to 120 epochs (chained), a 60-epoch flow run with the shifted t (local), flow
+M60 / diffusion S60 / regression S60 on fig2 (each with a chained continuation to 120).
+
 **Update 2026-10-12 04:30 — generative pose models re-implemented (user ask); first round at S20: behind regression, undertrained.**
 The user judged the June diffusion test suspect and asked for flow matching as its own method, zero-shot only, no budget limit.
 `src/imuposer/models/Transformers/GenIMUPoser.py` now holds three objectives on one DiT-style backbone (pre-LN transformer, adaLN-zero
