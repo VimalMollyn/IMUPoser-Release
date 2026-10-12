@@ -181,6 +181,13 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-12 10:45 — XL snapshot re-run + continuation: 14.68 / 8.27 cm, the best mesh error so far.** The XL snapshot
+re-run (`scale_xl60_ctrl_snap`, whose own early + late average was only 15.30) continued for 60 epochs on fig2
+(`scale_xl60_ctrl_snap_c`: dip_test 16.49, zero-shot 16.31 best / 16.10 top-3). Averaging the stage-1 snapshots 10/20/30 + its
+top-3 with the continuation's top-3 (nine checkpoints) gives **14.68 / 8.27 cm**: third on SIP behind the L leader (14.26 / 8.33)
+and the original XL trajectory (14.43 / 8.36), but the lowest mesh error of any model. The one-trajectory early + late rule keeps
+holding, and the continuation is what rescued this trajectory (15.30 -> 14.68).
+
 **Update 2026-10-12 10:00 — flow matching beats regression once it is trained long enough: S60 flow 16.89 zero-shot.** The
 60-epoch flow model (`gen_flow_s60_ctrl`, same S backbone, 8 Euler steps, one sample) scores **16.89 / 10.51 cm**, ahead of the
 regression control at S20 (17.28), the production S20 (17.03) and the production M60 single checkpoint (17.31), and close to the
