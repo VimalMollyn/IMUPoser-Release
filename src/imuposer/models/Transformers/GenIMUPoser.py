@@ -61,10 +61,10 @@ class _TimeEmb(nn.Module):
         self.d = d
         self.mlp = nn.Sequential(nn.Linear(d, d), nn.SiLU(), nn.Linear(d, d))
 
-    def forward(self, t):                      # t: (B,) float in [0, 1]
+    def forward(self, t):                      # t: (B,) or (B,T) float in [0, 1] -> (B,d) or (B,T,d)
         half = self.d // 2
         freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device).float() / half)
-        a = (t.float() * 1000.0)[:, None] * freqs[None, :]
+        a = (t.float() * 1000.0)[..., None] * freqs
         e = torch.cat([a.sin(), a.cos()], dim=-1)
         if e.shape[-1] < self.d:
             e = F.pad(e, (0, self.d - e.shape[-1]))
@@ -84,8 +84,11 @@ class _Block(nn.Module):
         self.ada = nn.Linear(d, 6 * d)
         nn.init.zeros_(self.ada.weight); nn.init.zeros_(self.ada.bias)
 
-    def forward(self, h, c, pad):              # h: (B,T,d)  c: (B,d)  pad: (B,T) True = padded
-        s1, b1, g1, s2, b2, g2 = self.ada(F.silu(c)).unsqueeze(1).chunk(6, dim=-1)
+    def forward(self, h, c, pad):              # h: (B,T,d)  c: (B,d) one t per window, or (B,T,d) one t per frame  pad: (B,T) True = padded
+        mod = self.ada(F.silu(c))
+        if mod.dim() == 2:
+            mod = mod.unsqueeze(1)
+        s1, b1, g1, s2, b2, g2 = mod.chunk(6, dim=-1)
         x = self.norm1(h) * (1 + s1) + b1
         a = self.attn(x, x, x, key_padding_mask=pad, need_weights=False)[0]
         h = h + g1 * self.drop(a)
@@ -121,7 +124,10 @@ class _GenNet(nn.Module):
         h = self.pe(self.inp(x))
         for blk in self.enc.layers:
             h = blk(h, c, pad)
-        s, b = self.ada_out(F.silu(c)).unsqueeze(1).chunk(2, dim=-1)
+        mod = self.ada_out(F.silu(c))
+        if mod.dim() == 2:
+            mod = mod.unsqueeze(1)
+        s, b = mod.chunk(2, dim=-1)
         h = self.norm_out(h) * (1 + s) + b
         if self.use_bilstm:
             h, _ = self.bilstm(h)
@@ -158,11 +164,20 @@ class _GenPoser(pl.LightningModule):
         self.cond_drop = _env_f("GEN_COND_DROP", 0.0)
         self.std_min = _env_f("GEN_STD_MIN", 0.05)
         self.val_steps = _env_i("GEN_VAL_STEPS", 1)
+        # HISTORY-CONDITIONED (autoregressive) mode, the DiffusionPoser / EgoEgo way: GEN_HIST=1 trains with per-frame time
+        # levels where a random prefix of the window is the clean (or slightly noised) pose history and only the rest is
+        # generated; GEN_AR=1 at eval then samples a sequence chunk by chunk (GEN_CHUNK new frames per step, the last
+        # TF_EVAL_WINDOW - GEN_CHUNK generated frames as fixed context, the IMU of the whole window as condition).
+        self.hist = _env_i("GEN_HIST", 0)
+        self.hist_p = _env_f("GEN_HIST_P", 0.7)           # share of training windows that get a history prefix
+        self.ctx_noise_p = _env_f("GEN_CTX_NOISE_P", 0.5) # share of those whose context is slightly noised (t in [0.7, 1))
+        self.chunk = _env_i("GEN_CHUNK", 25)              # new frames per autoregressive step (1 s at 25 fps)
+        self.min_new = 8
         self.training_step_outputs, self.validation_step_outputs, self.test_step_outputs = [], [], []
         self.save_hyperparameters(ignore=["config"])
         n_par = sum(p.numel() for p in self.parameters())
         print(f"[gen] {type(self).__name__}: {n_par/1e6:.2f} M params, t_dist={self.t_dist} geom_w={self.geom_w} "
-              f"cond_drop={self.cond_drop} val_steps={self.val_steps}", flush=True)
+              f"cond_drop={self.cond_drop} val_steps={self.val_steps} hist={self.hist} (p={self.hist_p}, ctx_noise_p={self.ctx_noise_p}, chunk={self.chunk})", flush=True)
 
     # ---- helpers -------------------------------------------------------------------------------------------
     def _pad_mask(self, lens, T, dev):
@@ -237,14 +252,35 @@ class _GenPoser(pl.LightningModule):
         y1 = self._norm(x1)
         z = torch.randn_like(y1)
         t = self._sample_t(B, x1.device)
-        y_t, target_v = self._path(y1, z, t)
-        pred = self.net(torch.cat([y_t, imu], dim=-1), t, pad)
-        target_v = target_v.masked_fill(pad.unsqueeze(-1), 0.0)
-        loss = self.loss(pred, target_v)
+        if self.hist:
+            # per-frame time levels: a random prefix of k frames is the pose history (clean, t = 1, or slightly noised),
+            # the remaining frames share the sampled t; the loss is taken on the non-clean frames only
+            dev = x1.device
+            use_hist = torch.rand(B, device=dev) < self.hist_p
+            k = torch.randint(0, max(T - self.min_new, 0) + 1, (B,), device=dev)
+            ctx_t = torch.where(torch.rand(B, device=dev) < self.ctx_noise_p, 0.7 + 0.3 * torch.rand(B, device=dev), torch.ones(B, device=dev))
+            is_ctx = (torch.arange(T, device=dev)[None, :] < k[:, None]) & use_hist[:, None]
+            t_frames = torch.where(is_ctx, ctx_t[:, None], t[:, None])                 # (B,T)
+            y_t, target_v = self._path(y1, z, t_frames)
+            pred = self.net(torch.cat([y_t, imu], dim=-1), t_frames, pad)
+            valid = (~pad) & (t_frames < 1.0 - 1e-6)
+            loss = (((pred - target_v) ** 2) * valid.unsqueeze(-1)).sum() / (valid.sum() * pred.shape[-1]).clamp(min=1)
+            t_for_x1 = t_frames
+        else:
+            y_t, target_v = self._path(y1, z, t)
+            pred = self.net(torch.cat([y_t, imu], dim=-1), t, pad)
+            target_v = target_v.masked_fill(pad.unsqueeze(-1), 0.0)
+            loss = self.loss(pred, target_v)
+            t_for_x1 = t
         if self.geom_w > 0:
-            x1_hat = self._denorm(self._x1_from(y_t, pred, t)).masked_fill(pad.unsqueeze(-1), 0.0)
+            x1_hat = self._denorm(self._x1_from(y_t, pred, t_for_x1)).masked_fill(pad.unsqueeze(-1), 0.0)
             loss = loss + self.geom_w * self._pose_loss(imu, x1_hat, x1, B, T)
         return loss
+
+    @staticmethod
+    def _tt(t):
+        """Broadcast a time tensor to (B,1,1) (one t per window) or (B,T,1) (one t per frame)."""
+        return t[:, None, None] if t.dim() == 1 else t[:, :, None]
 
     def _path(self, y1, z, t):          # -> (y_t, training target)
         raise NotImplementedError
@@ -256,9 +292,10 @@ class _GenPoser(pl.LightningModule):
         raise NotImplementedError
 
     def _predict(self, y, imu, t, pad, w):
-        """Network prediction with optional classifier-free guidance (w > 1 mixes in an unconditional prediction)."""
+        """Network prediction with optional classifier-free guidance (w > 1 mixes in an unconditional prediction).
+        t: a float (one time for the whole window) or a (B,T) tensor of per-frame times."""
         B = y.shape[0]
-        tt = torch.full((B,), float(t), device=y.device)
+        tt = t if torch.is_tensor(t) else torch.full((B,), float(t), device=y.device)
         p = self.net(torch.cat([y, imu], dim=-1), tt, pad)
         if w != 1.0:
             pu = self.net(torch.cat([y, torch.zeros_like(imu)], dim=-1), tt, pad)
@@ -276,7 +313,42 @@ class _GenPoser(pl.LightningModule):
             y = self._sample_step(y, imu, ts[i], ts[i + 1], pad, w)
         return self._denorm(y).masked_fill(pad.unsqueeze(-1), 0.0)
 
-    def _sample_avg(self, imu, lens, steps=None, K=None, seed=None, w=None):
+    @torch.no_grad()
+    def _sample_ar(self, imu, lens, steps, gen, w):
+        """Autoregressive sampling of a whole sequence (the DiffusionPoser way): the first window is sampled from noise as
+        usual; after that, each step keeps the last W - C generated frames as clean context (t = 1) and denoises only the
+        next C frames from noise, with the IMU of the whole window as condition. Padded frames are not supported here
+        (evaluation feeds one unpadded sequence at a time)."""
+        B, T, _ = imu.shape
+        dev = imu.device
+        W = _env_i("TF_EVAL_WINDOW", 125)
+        C = max(1, min(self.chunk, W - 1))
+        n = self.n_pose_output
+        ts = torch.linspace(0.0, 1.0, steps + 1).tolist()
+        out = torch.zeros(B, T, n, device=dev)
+        first = min(W, T)
+        pad0 = torch.zeros(B, first, dtype=torch.bool, device=dev)
+        y = torch.randn(B, first, n, generator=gen, device=dev)
+        for i in range(steps):
+            y = self._sample_step(y, imu[:, :first], ts[i], ts[i + 1], pad0, w)
+        out[:, :first] = y
+        pos = first
+        while pos < T:
+            s = max(0, pos - (W - C)); e = min(pos + C, T)
+            L_ctx, L_new = pos - s, e - pos
+            ctx = out[:, s:pos]
+            y_new = torch.randn(B, L_new, n, generator=gen, device=dev)
+            pad_w = torch.zeros(B, e - s, dtype=torch.bool, device=dev)
+            t_frames = torch.ones(B, e - s, device=dev)
+            for i in range(steps):
+                t_frames[:, L_ctx:] = ts[i]
+                pred = self._predict(torch.cat([ctx, y_new], dim=1), imu[:, s:e], t_frames, pad_w, w)
+                y_new = self._step_from_pred(y_new, pred[:, L_ctx:], ts[i], ts[i + 1])
+            out[:, pos:e] = y_new
+            pos = e
+        return self._denorm(out)
+
+    def _sample_avg(self, imu, lens, steps=None, K=None, seed=None, w=None, ar=False):
         steps = _env_i("GEN_STEPS", 8) if steps is None else steps
         K = _env_i("GEN_SAMPLE_AVG", 1) if K is None else K
         seed = _env_i("GEN_SEED", 0) if seed is None else seed
@@ -284,7 +356,7 @@ class _GenPoser(pl.LightningModule):
         acc = None
         for k in range(K):
             gen = torch.Generator(device=imu.device); gen.manual_seed(seed + k)
-            s = self._sample(imu, lens, steps, gen, w)
+            s = self._sample_ar(imu, lens, steps, gen, w) if ar else self._sample(imu, lens, steps, gen, w)
             acc = s if acc is None else acc + s
         return acc / K
 
@@ -293,6 +365,8 @@ class _GenPoser(pl.LightningModule):
         if not self.generative:
             f = lambda c, l: self.net(c, torch.zeros(c.shape[0], device=c.device), self._pad_mask(l, c.shape[1], c.device))
         else:
+            if not self.training and _env_i("GEN_AR", 0):
+                return self._sample_avg(imu_inputs, imu_lens, ar=True)     # whole sequence, chunk by chunk
             f = lambda c, l: self._sample_avg(c, l)
         T = imu_inputs.size(1)
         W = _env_i("TF_EVAL_WINDOW", 125)
@@ -344,11 +418,14 @@ class FlowIMUPoser(_GenPoser):
     KIND = 1
 
     def _path(self, y1, z, t):
-        tt = t[:, None, None]
+        tt = self._tt(t)
         return (1 - tt) * z + tt * y1, y1 - z
 
     def _x1_from(self, y_t, v, t):
-        return y_t + (1 - t[:, None, None]) * v
+        return y_t + (1 - self._tt(t)) * v
+
+    def _step_from_pred(self, y, v, t0, t1):
+        return y + (t1 - t0) * v                 # Euler step of dy/dt = v
 
     def _sample_step(self, y, imu, t0, t1, pad, w):
         h = t1 - t0
@@ -356,7 +433,7 @@ class FlowIMUPoser(_GenPoser):
         if os.environ.get("GEN_SOLVER", "euler").lower() == "midpoint" and t1 < 1.0 + 1e-9 and h > 0:
             y_mid = y + 0.5 * h * v
             v = self._predict(y_mid, imu, t0 + 0.5 * h, pad, w)
-        return y + h * v
+        return self._step_from_pred(y, v, t0, t1)
 
 
 class DiffusionV2IMUPoser(_GenPoser):
@@ -368,12 +445,18 @@ class DiffusionV2IMUPoser(_GenPoser):
         return math.sin(0.5 * math.pi * t), math.cos(0.5 * math.pi * t)
 
     def _path(self, y1, z, t):
-        a = torch.sin(0.5 * math.pi * t)[:, None, None]; s = torch.cos(0.5 * math.pi * t)[:, None, None]
+        a = self._tt(torch.sin(0.5 * math.pi * t)); s = self._tt(torch.cos(0.5 * math.pi * t))
         return a * y1 + s * z, a * z - s * y1
 
     def _x1_from(self, y_t, v, t):
-        a = torch.sin(0.5 * math.pi * t)[:, None, None]; s = torch.cos(0.5 * math.pi * t)[:, None, None]
+        a = self._tt(torch.sin(0.5 * math.pi * t)); s = self._tt(torch.cos(0.5 * math.pi * t))
         return a * y_t - s * v
+
+    def _step_from_pred(self, y, v, t0, t1):
+        a0, s0 = self._ab(t0); a1, s1 = self._ab(t1)
+        y1_hat = a0 * y - s0 * v
+        z_hat = s0 * y + a0 * v
+        return a1 * y1_hat + s1 * z_hat          # deterministic DDIM update (eta = 0)
 
     def _sample_step(self, y, imu, t0, t1, pad, w):
         a0, s0 = self._ab(t0); a1, s1 = self._ab(t1)
