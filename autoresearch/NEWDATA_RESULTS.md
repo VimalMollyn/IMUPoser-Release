@@ -181,6 +181,13 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-13 01:10 — the leader trajectory continued: no gain, 14.26 stands.** The L60 snapshot run that holds the
+zero-shot lead (early 10/20/30 + top-3 = 14.26 / 8.33) was continued for 60 epochs (`scale_l60_ctrl_snap_c`: dip_test 16.46,
+zero-shot 15.99 best / 15.78 top-3). Extending the leader recipe with the continuation gives 14.41 (continuation top-3 added,
+nine), 14.49 (both stages early + late, twelve) and 14.60 (all continuation snapshots, fourteen): every variant is slightly worse
+than the two-stage-free leader. The continuation rescued the weak XL snapshot trajectory (15.30 -> 14.68) but has nothing to add
+to a trajectory whose early + late average is already good.
+
 **Update 2026-10-12 22:00 — generative round 2 (60 epochs): flow matching edges regression at S; longer is not better; the
 noise-end time shift is the lever.** Zero-shot SIP, all S size (d256 / 4 layers) on control unless noted, no fine-tune:
 regression control S60 16.72; flow S60 default t 16.89 (8 steps) / 16.39 (32 steps); **flow S60 with t shifted to the noise end
