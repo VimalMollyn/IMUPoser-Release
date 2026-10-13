@@ -181,6 +181,16 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-13 10:40 — flow ensembles: 15.17 for S + M + L; no gain on top of the regression leader.** Output-space
+ensembling (r6d outputs averaged across members, the way every regression ensemble is scored) does work for flow models even though
+weight averaging does not: S + L shifted-time flow 15.38, **S + M + L 15.17** (members 16.07 / 16.32 / 15.74), the best generative
+result. Mixed with the averaged L60 regression leader (14.26): leader + L flow 50/50 14.31, leader + S/M/L flow 14.56, i.e. the flow
+models carry no information the leader lacks. Where this leaves the campaign: flow matching, properly implemented and trained, beats
+regression single checkpoints at equal size (15.74 vs 16.19 at L), prefers the noise-end time shift and few sampling steps, gets worse
+with continuation and with weight averaging, improves with output ensembles, and is still 0.9 degrees behind the averaged regression
+leader. Still running: the time-shift magnitude sweep at S (m = -1 / -3), the shifted-time M continuation, the L flow continuation
+and shifted-time diffusion on fig2, and the XL flow on fig2.
+
 **Update 2026-10-13 09:10 — flow matching at L with the noise-end time shift: 15.74 zero-shot, the best flow model.** The L
 flow (`gen_flow_l60_tlow_ctrl`, d512 / 8 layers, 60 epochs on control, `GEN_T_M=-2`) scores **15.74 / 9.49 cm** at 8 Euler steps
 (16.04 at 32: the shifted-time models prefer few steps), below the production L60 regression's single checkpoint (16.19) and the
