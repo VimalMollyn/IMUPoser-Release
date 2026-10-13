@@ -181,6 +181,19 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-12 22:00 — generative round 2 (60 epochs): flow matching edges regression at S; longer is not better; the
+noise-end time shift is the lever.** Zero-shot SIP, all S size (d256 / 4 layers) on control unless noted, no fine-tune:
+regression control S60 16.72; flow S60 default t 16.89 (8 steps) / 16.39 (32 steps); **flow S60 with t shifted to the noise end
+(`GEN_T_M=-2`) 16.07** (8 steps; 16.24 at 32, so more steps do not help that variant); diffusion v2 S60 19.61; flow M60 default t
+17.40 (8 steps), i.e. the bigger model did not help flow at 60 epochs with the default time distribution. Continuing the default-t
+S60 flow for 60 more epochs made zero-shot worse (17.96 at 8 steps, 17.82 at 32) while its validation pose error kept improving,
+the same overfitting-to-synthetic pattern the regression models show, and checkpoint averaging along the flow trajectory, the lever
+that produced the regression leaders, hurts flow models (top-3 + snapshots 17.74; with the continuation's checkpoints 21.28).
+Verdict so far: flow matching beats the regression control at S size by 0.3-0.65 degrees (16.07-16.39 vs 16.72) and the
+production S20 (17.03) by about a degree, but it is still far behind the averaged regression leaders (14.26) and cannot use their
+averaging trick. Running: flow M60 and S60 continuation with the shifted t (local), flow L60 and XL60 with the shifted t (fig2),
+diffusion S60 with the shifted t (fig2).
+
 **Update 2026-10-12 10:45 — XL snapshot re-run + continuation: 14.68 / 8.27 cm, the best mesh error so far.** The XL snapshot
 re-run (`scale_xl60_ctrl_snap`, whose own early + late average was only 15.30) continued for 60 epochs on fig2
 (`scale_xl60_ctrl_snap_c`: dip_test 16.49, zero-shot 16.31 best / 16.10 top-3). Averaging the stage-1 snapshots 10/20/30 + its
