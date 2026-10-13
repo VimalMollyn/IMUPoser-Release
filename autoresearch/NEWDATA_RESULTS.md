@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-13 09:10 — flow matching at L with the noise-end time shift: 15.74 zero-shot, the best flow model.** The L
+flow (`gen_flow_l60_tlow_ctrl`, d512 / 8 layers, 60 epochs on control, `GEN_T_M=-2`) scores **15.74 / 9.49 cm** at 8 Euler steps
+(16.04 at 32: the shifted-time models prefer few steps), below the production L60 regression's single checkpoint (16.19) and the
+L20 (16.47). The shifted-time S (16.07) and M (16.87 at 32 steps, 8-step pending) sit above it, and the S continuation to 120 epochs
+again got worse (16.60), so for flow the recipe is "60 epochs, time sampling shifted to the noise end, few steps", and model size
+helps a little at L. What flow still lacks is the regression leaders' averaging (14.26): weight averaging hurts it, so the only
+averaging route left is an output-space ensemble of flow models (S + M + L shifted-time, being scored). A time-shift magnitude
+sweep (m = -1 / -2 / -3) at S60 and the XL flow on fig2 are in flight.
+
 **Update 2026-10-13 01:10 — the leader trajectory continued: no gain, 14.26 stands.** The L60 snapshot run that holds the
 zero-shot lead (early 10/20/30 + top-3 = 14.26 / 8.33) was continued for 60 epochs (`scale_l60_ctrl_snap_c`: dip_test 16.46,
 zero-shot 15.99 best / 15.78 top-3). Extending the leader recipe with the continuation gives 14.41 (continuation top-3 added,
