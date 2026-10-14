@@ -181,6 +181,17 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-14 08:30 — history-conditioned (autoregressive) flow, the DiffusionPoser / EgoEgo way: worse than
+whole-window sampling for the offline metric.** The flow model was given per-frame time levels, trained with a random clean (or
+slightly noised) pose-history prefix as context (`GEN_HIST=1`, 70% of windows; the rest whole-window), and sampled chunk by chunk
+with the generated history fixed (`GEN_AR=1`). Same S60 checkpoint, zero-shot: whole-window 16.58; autoregressive 17.49 (62-frame
+chunks), 17.63 (100-frame chunks), 18.41 (25-frame chunks). Re-noising the context to t = 0.8-0.9 and refining it together with
+the new frames (SDEdit-style) is worse again (22.7-22.9 at 25 frames, 18.3 at 62), because overlapping frames get re-noised by
+every later chunk. Two conclusions: conditioning on generated poses locks their errors in, so for an offline score the
+bidirectional whole-window sampler (which still sees the whole window's IMU) wins, and the history training itself costs about
+half a degree at whole-window evaluation (16.58 vs 16.07). The autoregressive form stays the right shape for a real-time system,
+but it is not a lever for the zero-shot number.
+
 **Update 2026-10-14 03:00 — L on all the raw data with no selection: dip_test 16.75, zero-shot 18.12.** The L trained 20 epochs on
 treatment + raw MotionGV without the DIP-like selection (1,400 h; the first fig2 run to stream a 700-hour-plus set, from the NVMe
 shard copy at 2.1 it/s) is worse on dip_test than both the selected recipe and the control-only L60 (16.31), and does not
