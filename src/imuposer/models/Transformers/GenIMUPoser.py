@@ -333,17 +333,28 @@ class _GenPoser(pl.LightningModule):
             y = self._sample_step(y, imu[:, :first], ts[i], ts[i + 1], pad0, w)
         out[:, :first] = y
         pos = first
+        # GEN_CTX_T < 1: instead of fixing the generated history as clean context, re-noise it to time t_c and refine it
+        # together with the new frames (SDEdit-style); the context then steps from t_c to 1 while the new frames go 0 -> 1
+        t_c = _env_f("GEN_CTX_T", 1.0)
         while pos < T:
             s = max(0, pos - (W - C)); e = min(pos + C, T)
             L_ctx, L_new = pos - s, e - pos
             ctx = out[:, s:pos]
+            if t_c < 1.0:
+                ctx = (1 - t_c) * torch.randn(B, L_ctx, n, generator=gen, device=dev) + t_c * ctx
             y_new = torch.randn(B, L_new, n, generator=gen, device=dev)
             pad_w = torch.zeros(B, e - s, dtype=torch.bool, device=dev)
             t_frames = torch.ones(B, e - s, device=dev)
             for i in range(steps):
                 t_frames[:, L_ctx:] = ts[i]
+                tc0, tc1 = t_c + (1 - t_c) * ts[i], t_c + (1 - t_c) * ts[i + 1]
+                t_frames[:, :L_ctx] = tc0
                 pred = self._predict(torch.cat([ctx, y_new], dim=1), imu[:, s:e], t_frames, pad_w, w)
                 y_new = self._step_from_pred(y_new, pred[:, L_ctx:], ts[i], ts[i + 1])
+                if t_c < 1.0:
+                    ctx = self._step_from_pred(ctx, pred[:, :L_ctx], tc0, tc1)
+            if t_c < 1.0:
+                out[:, s:pos] = ctx                       # the refined context replaces the earlier estimate of those frames
             out[:, pos:e] = y_new
             pos = e
         return self._denorm(out)
