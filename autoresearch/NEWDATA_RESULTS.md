@@ -181,6 +181,11 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-14 03:00 — L on all the raw data with no selection: dip_test 16.75, zero-shot 18.12.** The L trained 20 epochs on
+treatment + raw MotionGV without the DIP-like selection (1,400 h; the first fig2 run to stream a 700-hour-plus set, from the NVMe
+shard copy at 2.1 it/s) is worse on dip_test than both the selected recipe and the control-only L60 (16.31), and does not
+transfer zero-shot (18.12). Unselected video-estimated motion hurts; the DIP-likeness selection is what makes the raw data usable.
+
 **Update 2026-10-14 01:00 — XXL on all the raw data (user ask): dip_test 15.86, zero-shot 18.45.** The XXL (102 M) trained
 20 epochs on the DIP-like selection of treatment + raw MotionGV (710.6 h kept of 1,400 h) gives dip_test **15.86**, the second-best
 single model after the cosine XL on the same recipe (15.75) and ahead of the XXL60 control (15.91). Zero-shot it is 18.45 best /
