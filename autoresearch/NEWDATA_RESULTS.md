@@ -191,7 +191,9 @@ A three-way ensemble adding the XL stages 1+4+snap20 average is the best on the 
 (13.68 whole set); weighting the regression leader 2:1 changes nothing (13.82). So flow matching, which could not use the
 regression models' weight averaging, contributes what the averaged regression models lack: the two families are complementary,
 and the 60 -> 120 epoch continuation that hurt the S and M flow models was the step that made the L flow worth ensembling.
-In flight: a third L flow stage (120 -> 180), continuations chained onto the XL and XXL flow runs, and the m = -1 L flow.
+The three-way ensemble with overlapping windows reads **13.52 / 8.00 cm** on the whole set and 13.84 on the report split, the
+best numbers of the study so far. In flight: a third L flow stage (120 -> 180), continuations chained onto the XL and XXL flow
+runs, and the m = -1 L flow.
 
 **Update 2026-10-14 16:30 — leader trajectory, third stage: saturated; flow L at 120 epochs reaches 14.99.** The third
 60-epoch stage of the leader L trajectory (`scale_l60_ctrl_snap_c2`: dip_test 16.52, zero-shot 16.27 best / 16.04 top-3) gives
