@@ -546,6 +546,13 @@ def build(out_path):
         st = next((r for r in results_rows("zs_split") if r.get("name") == "swa_xl60_stride31" and r.get("all_sip")), None)
         if st and zbest["tag"] == "swa_xl60_ctrl":
             head += f" Same model with overlapping evaluation windows (stride 31): SIP {st['all_sip']:.2f}°, mesh {st['all_mesh']:.2f} cm."
+        # an output-space ENSEMBLE can lead the single runs: report it first, with its report-split score (participants 3-10)
+        ens_rows = [r for r in results_rows("zs_split") if r.get("all_sip") and r.get("name", "").startswith("ens_")]
+        ens_best = min(ens_rows, key=lambda r: r["all_sip"]) if ens_rows else None
+        if ens_best and ens_best["all_sip"] < z["sip"]:
+            head = (f"Best zero-shot on the IMUPoser dataset, no fine-tune: SIP {ens_best['all_sip']:.2f}°, mesh error {ens_best.get('all_mesh', 0):.2f} cm "
+                    f"with an output-space ensemble ({ens_best.get('label', ens_best['name'])}); on the report split (participants 3-10) "
+                    f"SIP {ens_best['test8_sip']:.2f}°, mesh {ens_best['test8_mesh']:.2f} cm. Best single model: " + head[len("Best zero-shot on the IMUPoser dataset, no fine-tune: "):])
     else:
         head = "No zero-shot evaluation yet."
     head2 = (f"The paper's own DIP-fine-tuned model on this set, same sensors, without end effectors: 22.21°, 8.56 cm, 10.12 cm. "

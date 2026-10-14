@@ -181,6 +181,18 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-14 18:30 — NEW ZERO-SHOT LEADER, 13.82 / 8.28 cm: the regression leader ensembled with the 120-epoch L
+flow model.** The 120-epoch L flow (`gen_flow_l60c_tlow_ctrl`, noise-end t) scores **14.64** at 8 Euler steps on its own, the best
+single checkpoint of any kind (the regression leader is an average of six checkpoints). Averaged in output space 50/50 with that
+regression leader (14.26) it gives **13.82 / 8.28 cm** on the whole dataset, and under the ensemble protocol 12.79 on the selection
+split (participants 1-2) and 14.10 on the report split (3-10), against 14.40 for the previous leader on the report split. With
+overlapping evaluation windows (stride 31, a setting fixed on the DIP validation split): 13.62 whole set, 13.92 report split.
+A three-way ensemble adding the XL stages 1+4+snap20 average is the best on the selection split (12.60) and reports 13.97
+(13.68 whole set); weighting the regression leader 2:1 changes nothing (13.82). So flow matching, which could not use the
+regression models' weight averaging, contributes what the averaged regression models lack: the two families are complementary,
+and the 60 -> 120 epoch continuation that hurt the S and M flow models was the step that made the L flow worth ensembling.
+In flight: a third L flow stage (120 -> 180), continuations chained onto the XL and XXL flow runs, and the m = -1 L flow.
+
 **Update 2026-10-14 16:30 — leader trajectory, third stage: saturated; flow L at 120 epochs reaches 14.99.** The third
 60-epoch stage of the leader L trajectory (`scale_l60_ctrl_snap_c2`: dip_test 16.52, zero-shot 16.27 best / 16.04 top-3) gives
 14.69 averaged with stage 1 (the far-apart-stage recipe that rescued the XL), 14.76 with all three stages and 14.89 with both stages'
