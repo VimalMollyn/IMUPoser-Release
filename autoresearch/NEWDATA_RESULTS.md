@@ -181,6 +181,14 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-14 16:30 — leader trajectory, third stage: saturated; flow L at 120 epochs reaches 14.99.** The third
+60-epoch stage of the leader L trajectory (`scale_l60_ctrl_snap_c2`: dip_test 16.52, zero-shot 16.27 best / 16.04 top-3) gives
+14.69 averaged with stage 1 (the far-apart-stage recipe that rescued the XL), 14.76 with all three stages and 14.89 with both stages'
+early snapshots: every variant stays behind the leader's own 14.26. On the generative side the L flow continued to 120 epochs
+(`gen_flow_l60c_tlow_ctrl`, fig2) scores **14.99** at 32 steps, 0.75 better than its 60-epoch parent, while the S and M
+continuations had got worse: the larger flow models were the under-trained ones. Continuations are therefore chained onto the XL
+and XXL flow runs, and the flow ensemble will be re-scored with the 120-epoch L.
+
 **Update 2026-10-14 15:30 — flow training knobs at S60: the geometric loss matters, guidance hurts, m = -1 is the best time
 shift.** Time-shift sweep (S60, 8 steps): none 16.89, m = -1 **15.89**, m = -2 16.07, m = -3 16.87. Dropping the FK / IK loss on
 the x1 estimate (velocity objective only) costs 1.2 degrees (17.11). Condition dropout 0.1 costs 0.9 without guidance (16.82) and
