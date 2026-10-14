@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-14 15:30 — flow training knobs at S60: the geometric loss matters, guidance hurts, m = -1 is the best time
+shift.** Time-shift sweep (S60, 8 steps): none 16.89, m = -1 **15.89**, m = -2 16.07, m = -3 16.87. Dropping the FK / IK loss on
+the x1 estimate (velocity objective only) costs 1.2 degrees (17.11). Condition dropout 0.1 costs 0.9 without guidance (16.82) and
+classifier-free guidance then makes it worse monotonically (18.52 / 20.17 / 22.87 at w = 1.5 / 2 / 3): sharpening the conditional
+distribution moves samples away from its mean, which is what a mean-error metric scores. Ensembles keep paying: four shifted-time
+flow models (S m = -1, S m = -2, M, L) 15.05. The flow recipe is therefore fixed: 60 epochs, logit-normal t shifted by -1 to -2,
+FK / IK loss on, no dropout, 8 Euler steps, whole-window sampling, and output-space ensembles across sizes. Still training: L with
+m = -1 (local), M with m = -1, XL and XXL with m = -2 (fig2).
+
 **Update 2026-10-14 08:30 — history-conditioned (autoregressive) flow, the DiffusionPoser / EgoEgo way: worse than
 whole-window sampling for the offline metric.** The flow model was given per-frame time levels, trained with a random clean (or
 slightly noised) pose-history prefix as context (`GEN_HIST=1`, 70% of windows; the rest whole-window), and sampled chunk by chunk
