@@ -44,7 +44,7 @@ import torch.nn.functional as F
 import lightning.pytorch as pl
 
 from imuposer.smpl.parametricModel import ParametricModel
-from imuposer.math.angular import r6d_to_rotation_matrix
+from imuposer.math.angular import r6d_to_rotation_matrix, rotation_matrix_to_r6d
 from imuposer.config import Config
 from .TransformerIMUPoser import _SinusoidalPE, windowed_inference
 from .AvatarPoserModel import AvatarPoserModel, _IMU_JOINTS
@@ -173,11 +173,19 @@ class _GenPoser(pl.LightningModule):
         self.ctx_noise_p = _env_f("GEN_CTX_NOISE_P", 0.5) # share of those whose context is slightly noised (t in [0.7, 1))
         self.chunk = _env_i("GEN_CHUNK", 25)              # new frames per autoregressive step (1 s at 25 fps)
         self.min_new = 8
+        # SPATIAL INPAINTING (GEN_INPAINT=1): the target is the GLOBAL rotation of every joint (the metric's space) and the
+        # sensed joints' columns are "known pixels": their measured orientation replaces the noisy state at every sampling step
+        # (RePaint-style) and in training (except a GEN_INPAINT_NOISE_P share of windows, where they are noised like the rest,
+        # for robustness). GEN_INPAINT_OUT=1 (eval) also writes the measured orientation into the final output for those joints.
+        self.inpaint = _env_i("GEN_INPAINT", 0)
+        self.inpaint_out = _env_i("GEN_INPAINT_OUT", 1)
+        self.inpaint_noise_p = _env_f("GEN_INPAINT_NOISE_P", 0.2)
         self.training_step_outputs, self.validation_step_outputs, self.test_step_outputs = [], [], []
         self.save_hyperparameters(ignore=["config"])
         n_par = sum(p.numel() for p in self.parameters())
         print(f"[gen] {type(self).__name__}: {n_par/1e6:.2f} M params, t_dist={self.t_dist} geom_w={self.geom_w} "
-              f"cond_drop={self.cond_drop} val_steps={self.val_steps} hist={self.hist} (p={self.hist_p}, ctx_noise_p={self.ctx_noise_p}, chunk={self.chunk})", flush=True)
+              f"cond_drop={self.cond_drop} val_steps={self.val_steps} hist={self.hist} (p={self.hist_p}, ctx_noise_p={self.ctx_noise_p}, chunk={self.chunk}) "
+              f"inpaint={self.inpaint} (out={self.inpaint_out}, noise_p={self.inpaint_noise_p})", flush=True)
 
     # ---- helpers -------------------------------------------------------------------------------------------
     def _pad_mask(self, lens, T, dev):
@@ -185,6 +193,34 @@ class _GenPoser(pl.LightningModule):
 
     def _norm(self, x): return (x - self.x_mean) / self.x_std
     def _denorm(self, y): return y * self.x_std + self.x_mean
+
+    # ---- global <-> local rotation representations (spatial inpainting works in global-rotation space) -------
+    def _to_global(self, x_local):              # (B,T,144) local r6d -> (B,T,144) global r6d
+        B, T, _ = x_local.shape
+        R = r6d_to_rotation_matrix(x_local.reshape(-1, 24, 6)).view(-1, 24, 3, 3)
+        G = self.bodymodel.forward_kinematics_R(R)
+        return rotation_matrix_to_r6d(G).view(B, T, 24 * 6)
+
+    def _to_local(self, x_global):              # (B,T,144) global r6d -> (B,T,144) local r6d
+        B, T, _ = x_global.shape
+        G = r6d_to_rotation_matrix(x_global.reshape(-1, 24, 6)).view(-1, 24, 3, 3)
+        par = torch.as_tensor(self.bodymodel.parent[1:], device=G.device)
+        L = G.clone()
+        L[:, 1:] = G[:, par].transpose(-1, -2) @ G[:, 1:]
+        return rotation_matrix_to_r6d(L).view(B, T, 24 * 6)
+
+    def _known(self, imu):
+        """Sensed joints as known pixels: (B,T,144) bool mask over r6d columns and the measured global rotations as r6d."""
+        B, T, _ = imu.shape
+        obs = imu[:, :, 15:60].reshape(B, T, 5, 3, 3)
+        present = obs.abs().flatten(3).sum(-1) > 0                                   # (B,T,5)
+        r6 = rotation_matrix_to_r6d(obs).view(B, T, 5, 6)
+        mask = torch.zeros(B, T, 24, dtype=torch.bool, device=imu.device)
+        vals = torch.zeros(B, T, 24, 6, device=imu.device)
+        for k, j in enumerate(_IMU_JOINTS):
+            mask[:, :, j] = present[:, :, k]
+            vals[:, :, j] = torch.where(present[:, :, k, None], r6[:, :, k], vals[:, :, j])
+        return mask.repeat_interleave(6, dim=-1), vals.view(B, T, 24 * 6)
 
     def on_fit_start(self):
         self.bodymodel = ParametricModel(self.config.og_smpl_model_path, device=self.device)
@@ -206,6 +242,8 @@ class _GenPoser(pl.LightningModule):
         for i, batch in enumerate(dl):
             _, target, lens, _ = batch
             x = target[:, :, :self.n_pose_output]
+            if self.inpaint:
+                x = self._to_global(x.to(self.device)).cpu()
             m = torch.arange(x.shape[1])[None, :] < torch.as_tensor(lens)[:, None]
             x = x[m].double()
             s += x.sum(0); ss += (x * x).sum(0); cnt += x.shape[0]
@@ -249,6 +287,27 @@ class _GenPoser(pl.LightningModule):
         if self.cond_drop > 0:
             keep = (torch.rand(B, device=x1.device) >= self.cond_drop).float()[:, None, None]
             imu = imu * keep
+        if self.inpaint:
+            # global-rotation target; the sensed joints' measured orientations are clean known columns (except for a
+            # GEN_INPAINT_NOISE_P share of windows); the velocity loss is taken on the unknown columns, the geometric loss on
+            # the implied clean pose with the known columns written back, converted to local rotations
+            dev = x1.device
+            y1 = self._norm(self._to_global(x1))
+            kmask, kvals = self._known(imu)
+            keep_clean = (torch.rand(B, device=dev) >= self.inpaint_noise_p)[:, None, None] & kmask
+            z = torch.randn_like(y1)
+            t = self._sample_t(B, dev)
+            y_t, target_v = self._path(y1, z, t)
+            y_t = torch.where(keep_clean, self._norm(kvals), y_t)
+            pred = self.net(torch.cat([y_t, imu], dim=-1), t, pad)
+            valid = (~pad).unsqueeze(-1) & ~keep_clean
+            loss = (((pred - target_v) ** 2) * valid).sum() / valid.sum().clamp(min=1)
+            if self.geom_w > 0:
+                x1g = self._x1_from(y_t, pred, t)
+                x1g = torch.where(keep_clean, self._norm(kvals), x1g)
+                x1_hat = self._to_local(self._denorm(x1g)).masked_fill(pad.unsqueeze(-1), 0.0)
+                loss = loss + self.geom_w * self._pose_loss(imu, x1_hat, x1, B, T)
+            return loss
         y1 = self._norm(x1)
         z = torch.randn_like(y1)
         t = self._sample_t(B, x1.device)
@@ -309,6 +368,15 @@ class _GenPoser(pl.LightningModule):
         pad = self._pad_mask(lens, T, dev)
         y = torch.randn(B, T, self.n_pose_output, generator=gen, device=dev)
         ts = torch.linspace(0.0, 1.0, steps + 1).tolist()
+        if self.inpaint:
+            kmask, kvals = self._known(imu)
+            yk = self._norm(kvals)
+            for i in range(steps):
+                y = torch.where(kmask, yk, y)                      # known pixels re-imposed before every step
+                y = self._sample_step(y, imu, ts[i], ts[i + 1], pad, w)
+            if self.inpaint_out:
+                y = torch.where(kmask, yk, y)
+            return self._to_local(self._denorm(y)).masked_fill(pad.unsqueeze(-1), 0.0)
         for i in range(steps):
             y = self._sample_step(y, imu, ts[i], ts[i + 1], pad, w)
         return self._denorm(y).masked_fill(pad.unsqueeze(-1), 0.0)
