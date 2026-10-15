@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-15 14:00 — spatial inpainting: worse both ways; four-way ensemble: no gain.** The flow model trained in
+global-rotation space with the three sensed joints as known columns (re-imposed at every sampling step, noised in 20% of training
+windows) scores 17.39 with the measured orientations written into the output and 17.12 with the model's own prediction kept for
+those joints, against 15.89 for the plain S60 flow. Hard-conditioning on the measured orientations hurts on real data for the same
+reason the post-hoc injection did: the measured orientation carries the calibration error that is the domain gap. Together with the
+history-conditioned result, both halves of the spatio-temporal inpainting formulation are now tested and set aside. Adding the
+120-epoch single-run L average as a fourth member of the leader ensemble changes nothing (13.95 report / 13.52 overall with
+overlapping windows, identical to the three-way), since the two L regression averages are not diverse enough.
+
 **Update 2026-10-15 12:00 — one 120-epoch run vs 60 + 60: about equal; knob sweeps closed.** The L control trained 120 epochs in
 a single run (`scale_l120_ctrl_snap`, snapshots every 10-20 epochs; dip_test 16.43) scores 15.93 best, **14.94 with its three best
 checkpoints averaged** (the 60-epoch run's top-3 average was 15.85), and 14.39 with the early snapshots 10/20/30 added, against
