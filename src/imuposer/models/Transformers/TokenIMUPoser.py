@@ -63,6 +63,7 @@ class TokenIMUPoser(pl.LightningModule):
         self.loss = nn.MSELoss()
         self.ce_w, self.geom_w, self.tau = _env_f("TOK_CE_W", 1.0), _env_f("GEN_GEOM_W", 1.0), _env_f("TOK_TAU", 1.0)
         self.tok_frames = _env_i("TOK_FRAMES", 32)                     # frames per window used for the token losses
+        self.geom_frames = _env_i("TOK_GEOM_FRAMES", 8)                # of those, frames that also get the soft-decode geometric loss
         self.lr = _env_f("TF_LR", 3e-4)
         self.register_buffer("gen_kind", torch.tensor(3))
         self.training_step_outputs, self.validation_step_outputs, self.test_step_outputs = [], [], []
@@ -111,7 +112,7 @@ class TokenIMUPoser(pl.LightningModule):
         jg = self.bodymodel.forward_kinematics(pose=Rt.view(-1, 216))[1]
         return loss + self.loss(jp, jg)
 
-    def _subset_logits(self, imu, x1, pad):
+    def _subset_logits(self, imu, x1, pad, return_idx=False):
         """160 x 2048 logits per frame are too big to keep for a whole batch of windows, so the token head and the losses run on
         TOK_FRAMES random valid frames per window; the backbone still attends over the full window."""
         B, T, _ = x1.shape
@@ -122,23 +123,28 @@ class TokenIMUPoser(pl.LightningModule):
         hs = h.gather(1, idx.unsqueeze(-1).expand(-1, -1, h.shape[-1]))
         x1s = x1.gather(1, idx.unsqueeze(-1).expand(-1, -1, x1.shape[-1]))
         logits = self.head_out(F.gelu(self.head_in(hs).view(B, nf, self.n_tok, -1)))                 # (B,nf,n_tok,K)
-        return logits, x1s, sel_valid
+        return (logits, x1s, sel_valid, idx) if return_idx else (logits, x1s, sel_valid)
 
     def _train_loss(self, batch):
         imu, target, lens, _ = batch
         x1 = target[:, :, :self.n_pose_output]
         B, T, _ = x1.shape
         pad = self._pad_mask(lens, T, x1.device)
-        logits, x1s, sel_valid = self._subset_logits(imu, x1, pad)
+        logits, x1s, sel_valid, idx = self._subset_logits(imu, x1, pad, return_idx=True)
         nf = logits.shape[1]
-        gt = self._gt_tokens(x1s)                                      # (B*nf, n_tok)
+        if target.shape[-1] >= self.n_pose_output + self.n_tok:        # precomputed tokens (AUX_TARGET=tokens): no encoder pass
+            gt = target[:, :, self.n_pose_output:self.n_pose_output + self.n_tok].gather(1, idx.unsqueeze(-1).expand(-1, -1, self.n_tok)).reshape(B * nf, self.n_tok).long()
+        else:
+            gt = self._gt_tokens(x1s)                                  # (B*nf, n_tok)
         m = sel_valid.reshape(-1)
         ce = F.cross_entropy(logits.reshape(B * nf, self.n_tok, self.n_code)[m].reshape(-1, self.n_code), gt[m].reshape(-1))
         loss = self.ce_w * ce
         if self.geom_w > 0:
-            inv = (~sel_valid).unsqueeze(-1)
-            pred = self._decode(logits).masked_fill(inv, 0.0)
-            loss = loss + self.geom_w * self._geom_loss(pred, x1s.masked_fill(inv, 0.0))
+            # the soft decode is the second-biggest cost: take it on TOK_GEOM_FRAMES of the sampled frames
+            ng = min(self.geom_frames, nf)
+            inv = (~sel_valid[:, :ng]).unsqueeze(-1)
+            pred = self._decode(logits[:, :ng]).masked_fill(inv, 0.0)
+            loss = loss + self.geom_w * self._geom_loss(pred, x1s[:, :ng].masked_fill(inv, 0.0))
         return loss, ce
 
     # ---- Lightning API ----------------------------------------------------------------------------------------

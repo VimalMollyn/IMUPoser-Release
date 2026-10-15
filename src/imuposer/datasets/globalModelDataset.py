@@ -426,6 +426,20 @@ class GlobalModelDataset(Dataset):
             # per-window pseudo-activity label, broadcast over frames as one extra column
             lab = float(self.activity_labels[window_idx])
             _output = torch.cat([_output, _output.new_full((_output.shape[0], 1), lab)], dim=1)
+        elif aux == "tokens":
+            # precomputed TokenHMR pose tokens (scripts/1. Preprocessing/precompute_tokens.py -> <shard>/tokens.i16, int16
+            # (n_frames, n_tok)); appended as float columns, read back as integer class ids by TokenIMUPoser
+            assert self.stream, "AUX_TARGET=tokens needs the streaming shard loader"
+            tk = getattr(_st, "_tokens", None)
+            if tk is None:
+                import numpy as _np
+                p = _st.dir / "tokens.i16"
+                n_tok = p.stat().st_size // (2 * _st.n_frames)
+                tk = _np.memmap(p, dtype=_np.int16, mode="r", shape=(_st.n_frames, n_tok))
+                _st._tokens = tk
+            import numpy as _np
+            ids = torch.from_numpy(_np.array(tk[_s:_s + _L], dtype=_np.float32))
+            _output = torch.cat([_output, ids], dim=1)
 
         return _input, _output
 
