@@ -181,6 +181,25 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-15 18:00 — M flow continued to 120 epochs: 14.73, the second-best single model at 10 M params; the IMU → TokenHMR-token
+model is ready to train.** The M flow (m = -1) continued 60 more epochs on fig2 (fresh AdamW) goes from 15.72 to **14.73 / 7.29 cm MPJPE**
+at 8 steps, the same −1.0° the L flow gained from its continuation (15.74 → 14.64): training the flow models longer pays at both sizes,
+and the M at 120 epochs is within 0.1° of the L at a third of the parameters. As a fourth member of the leader ensemble (tiled windows)
+it changes nothing: 13.96 report / 12.50 selection against 13.97 / 12.60 for the three-way, so the ensemble is saturated near 13.8–14.0
+on the report split whatever is added (a second L regression average, a different-size flow model). Other arrivals: the S regression
+with 16 attention heads reads 16.53 against 16.72 with 8 heads (−0.19, about seed noise; the 16-head flow S and the two
+mixture-of-experts S runs are still training), and the XL flow at 60 epochs (m = -2, batch 32 × 8, lr 1e-4) reads 16.15, worse than the
+L flow at 60 (15.74); its continuation is at epoch 18/60. TokenHMR (user ask): the official tokenizer (160 tokens × 2048 codes over the
+21 body joints, non-commercial research licence, vendored under `src/imuposer/thirdparty/tokenhmr`) reconstructs the IMUPoser ground
+truth at 0.58° / 0.30 cm, so the representation loses nothing for this benchmark. The IMU → token model (`TokenIMUPoser`: the S
+backbone over the full window, a 64-dim factorised head giving 160 × 2048 logits per frame on 32 sampled frames per window,
+cross-entropy plus the geometric loss on the softmax-weighted decode of 8 of them, the tokenizer frozen) costs 245 ms per 16-window
+step, four times a regression step, in the token head and the decoder; encoding the targets on the fly was three times slower again,
+so the tokens are precomputed per shard (`scripts/1. Preprocessing/precompute_tokens.py`, int16, 50 of 104 shards done). The S60
+run launches when the precompute ends, an M-backbone variant follows, both zero-shot only. The page headline now ranks the
+ensembles by the report split: the gated ensembles' whole-set numbers (13.21) include the two participants their gate was fitted on
+and were leading the headline for the wrong reason (13.94 on the report split, behind the plain stride-31 ensemble's 13.84).
+
 **Update 2026-10-15 14:00 — spatial inpainting: worse both ways; four-way ensemble: no gain.** The flow model trained in
 global-rotation space with the three sensed joints as known columns (re-imposed at every sampling step, noised in 20% of training
 windows) scores 17.39 with the measured orientations written into the output and 17.12 with the model's own prediction kept for
