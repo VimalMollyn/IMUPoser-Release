@@ -181,6 +181,16 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-15 12:00 — one 120-epoch run vs 60 + 60: about equal; knob sweeps closed.** The L control trained 120 epochs in
+a single run (`scale_l120_ctrl_snap`, snapshots every 10-20 epochs; dip_test 16.43) scores 15.93 best, **14.94 with its three best
+checkpoints averaged** (the 60-epoch run's top-3 average was 15.85), and 14.39 with the early snapshots 10/20/30 added, against
+14.26 for the same recipe on the 60-epoch run; adding mid or late snapshots does not help (14.56-14.77). So a longer single run
+mostly moves the gain from the early + late trick into the top-3 average itself and ends at the same place. It is a differently
+trained regression member, and is being tried as a fourth member of the leader ensemble. Flow knob sweeps closed at S60:
+time shift m = -1 15.89 (best), m = -2 16.07, uniform t 16.27, default 16.89, m = -3 16.87; pose / FK / IK loss weight 0 -> 17.11,
+1 -> 15.89, 3 -> 16.57, so the single-model recipe is fixed and the remaining levers are size, 120-epoch continuations at L and
+above, and ensembling.
+
 **Update 2026-10-14 21:00 — mixture of experts, two readings.** (1) A learned gate over the three frozen leader members
 (72 per-joint weights, or a per-frame temporal gate on the IMU, fitted on participants 1-2 with the metric's own root-relative
 loss) improves the fitted split by 1-2 degrees (12.37 -> 10.5-11.4) and is slightly worse on the held-out participants (13.83 ->
