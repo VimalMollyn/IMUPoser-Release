@@ -71,15 +71,50 @@ class _TimeEmb(nn.Module):
         return self.mlp(e)
 
 
+class _MoEFFN(nn.Module):
+    """Mixture-of-experts feed-forward (the LLM recipe): E expert MLPs, a linear router per frame, top-k softmax gating, and a
+    Switch-style load-balancing loss (E * sum_e f_e * P_e, f = fraction of frames routed to e, P = mean router probability of e).
+    Experts are computed densely and masked (fine at our sizes); the aux loss is stored in self.aux for the module to add."""
+    def __init__(self, d, ff, n_exp, k, dropout):
+        super().__init__()
+        self.n_exp, self.k = n_exp, k
+        self.router = nn.Linear(d, n_exp)
+        self.linear1 = nn.ModuleList([nn.Linear(d, ff) for _ in range(n_exp)])
+        self.linear2 = nn.ModuleList([nn.Linear(ff, d) for _ in range(n_exp)])
+        self.drop = nn.Dropout(dropout)
+        self.aux = torch.zeros(())
+
+    def forward(self, x, valid):               # x: (B,T,d)  valid: (B,T) bool (unpadded frames)
+        logits = self.router(x)                                        # (B,T,E)
+        probs = logits.softmax(-1)
+        topv, topi = probs.topk(self.k, dim=-1)                        # (B,T,k)
+        gate = torch.zeros_like(probs).scatter(-1, topi, topv)
+        gate = gate / gate.sum(-1, keepdim=True).clamp(min=1e-9)       # renormalise the kept experts
+        out = torch.zeros_like(x)
+        for e in range(self.n_exp):
+            g = gate[..., e:e + 1]
+            if g.any():
+                out = out + g * self.linear2[e](self.drop(F.gelu(self.linear1[e](x))))
+        if self.training:
+            v = valid.unsqueeze(-1).float()
+            n = v.sum().clamp(min=1)
+            frac = ((gate > 0).float() * v).sum((0, 1)) / n              # fraction of frames routed to each expert
+            pmean = (probs * v).sum((0, 1)) / n                          # mean router probability per expert
+            self.aux = self.n_exp * (frac * pmean).sum()
+        return out
+
+
 class _Block(nn.Module):
     """Pre-LN transformer block with adaLN-zero modulation (DiT): scale/shift/gate per sub-layer from the time embedding."""
-    def __init__(self, d, nhead, ff, dropout):
+    def __init__(self, d, nhead, ff, dropout, n_exp=0, k=2):
         super().__init__()
         self.norm1 = nn.LayerNorm(d, elementwise_affine=False)
         self.attn = nn.MultiheadAttention(d, nhead, dropout=dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(d, elementwise_affine=False)
-        self.linear1 = nn.Linear(d, ff)        # names match nn.TransformerEncoderLayer so offline_fit reads FF off the weights
-        self.linear2 = nn.Linear(ff, d)
+        self.moe = _MoEFFN(d, ff, n_exp, k, dropout) if n_exp > 0 else None
+        if self.moe is None:
+            self.linear1 = nn.Linear(d, ff)    # names match nn.TransformerEncoderLayer so offline_fit reads FF off the weights
+            self.linear2 = nn.Linear(ff, d)
         self.drop = nn.Dropout(dropout)
         self.ada = nn.Linear(d, 6 * d)
         nn.init.zeros_(self.ada.weight); nn.init.zeros_(self.ada.bias)
@@ -93,19 +128,22 @@ class _Block(nn.Module):
         a = self.attn(x, x, x, key_padding_mask=pad, need_weights=False)[0]
         h = h + g1 * self.drop(a)
         x = self.norm2(h) * (1 + s2) + b2
-        h = h + g2 * self.drop(self.linear2(self.drop(F.gelu(self.linear1(x)))))
+        if self.moe is not None:
+            h = h + g2 * self.drop(self.moe(x, ~pad))
+        else:
+            h = h + g2 * self.drop(self.linear2(self.drop(F.gelu(self.linear1(x)))))
         return h
 
 
 class _GenNet(nn.Module):
     """[x_t ⊕ imu] per frame -> sinusoidal PE -> N adaLN blocks -> adaLN final norm -> (biLSTM) -> MLP head."""
-    def __init__(self, n_in, n_out, d_model=256, nhead=8, n_layers=4, dim_ff=1024, dropout=0.1, use_bilstm=False):
+    def __init__(self, n_in, n_out, d_model=256, nhead=8, n_layers=4, dim_ff=1024, dropout=0.1, use_bilstm=False, n_exp=0, k=2):
         super().__init__()
         self.inp = nn.Linear(n_in, d_model)    # `net.inp.weight` -> offline_fit reads d_model off it
         self.pe = _SinusoidalPE(d_model)
         self.t_emb = _TimeEmb(d_model)
         self.enc = nn.Module()
-        self.enc.layers = nn.ModuleList([_Block(d_model, nhead, dim_ff, dropout) for _ in range(n_layers)])
+        self.enc.layers = nn.ModuleList([_Block(d_model, nhead, dim_ff, dropout, n_exp, k) for _ in range(n_layers)])
         self.norm_out = nn.LayerNorm(d_model, elementwise_affine=False)
         self.ada_out = nn.Linear(d_model, 2 * d_model)
         nn.init.zeros_(self.ada_out.weight); nn.init.zeros_(self.ada_out.bias)
@@ -115,6 +153,9 @@ class _GenNet(nn.Module):
             self.bilstm = nn.LSTM(d_model, d_model, num_layers=1, batch_first=True, bidirectional=True)
             head_in = d_model * 2
         self.out = nn.Sequential(nn.Linear(head_in, d_model), nn.GELU(), nn.Linear(d_model, n_out))
+
+    def moe_aux(self):
+        return sum(blk.moe.aux for blk in self.enc.layers if blk.moe is not None)
 
     def forward(self, x, t, pad):
         full = pad.all(dim=1)                  # a fully padded row would make attention NaN; its output is zeroed anyway
@@ -146,9 +187,13 @@ class _GenPoser(pl.LightningModule):
         self.batch_size = config.batch_size
         self.generative = self.KIND != 0
         n_in = self.n_cond + (self.n_pose_output if self.generative else 0)
+        # GEN_MOE_E > 0: mixture-of-experts feed-forward in every block (GEN_MOE_E experts, top-GEN_MOE_K routing, load-balancing
+        # loss weight GEN_MOE_AUX), the LLM recipe, trained jointly from scratch
+        self.moe_e, self.moe_k, self.moe_aux_w = _env_i("GEN_MOE_E", 0), _env_i("GEN_MOE_K", 2), _env_f("GEN_MOE_AUX", 0.01)
         self.net = _GenNet(n_in, self.n_pose_output,
                            d_model=_env_i("TF_DMODEL", 256), nhead=_env_i("TF_HEADS", 8), n_layers=_env_i("TF_LAYERS", 4),
-                           dim_ff=_env_i("TF_FF", 1024), dropout=_env_f("TF_DROPOUT", 0.1), use_bilstm=bool(os.environ.get("TF_BILSTM")))
+                           dim_ff=_env_i("TF_FF", 1024), dropout=_env_f("TF_DROPOUT", 0.1), use_bilstm=bool(os.environ.get("TF_BILSTM")),
+                           n_exp=self.moe_e, k=self.moe_k)
         self.bodymodel = ParametricModel(config.og_smpl_model_path, device=config.device)
         self.loss = nn.MSELoss() if config.loss_type == "mse" else nn.L1Loss()
         self.ik_w = _env_f("AP_IK_W", 1.0)
@@ -185,7 +230,7 @@ class _GenPoser(pl.LightningModule):
         n_par = sum(p.numel() for p in self.parameters())
         print(f"[gen] {type(self).__name__}: {n_par/1e6:.2f} M params, t_dist={self.t_dist} geom_w={self.geom_w} "
               f"cond_drop={self.cond_drop} val_steps={self.val_steps} hist={self.hist} (p={self.hist_p}, ctx_noise_p={self.ctx_noise_p}, chunk={self.chunk}) "
-              f"inpaint={self.inpaint} (out={self.inpaint_out}, noise_p={self.inpaint_noise_p})", flush=True)
+              f"inpaint={self.inpaint} (out={self.inpaint_out}, noise_p={self.inpaint_noise_p}) moe={self.moe_e}x top-{self.moe_k} (aux {self.moe_aux_w})", flush=True)
 
     # ---- helpers -------------------------------------------------------------------------------------------
     def _pad_mask(self, lens, T, dev):
@@ -455,6 +500,8 @@ class _GenPoser(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self._train_loss(batch)
+        if self.moe_e > 0:
+            loss = loss + self.moe_aux_w * self.net.moe_aux()
         self.log("training_step_loss", loss.item(), batch_size=self.batch_size)
         self.training_step_outputs.append(loss.item())
         return {"loss": loss}

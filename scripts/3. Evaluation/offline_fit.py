@@ -222,7 +222,11 @@ def main():
         if "net.inp.weight" in sd:
             os.environ["TF_DMODEL"] = str(sd["net.inp.weight"].shape[0])
             os.environ["TF_LAYERS"] = str(len({k.split(".")[3] for k in sd if k.startswith("net.enc.layers.")}))
-            os.environ["TF_FF"] = str(sd["net.enc.layers.0.linear1.weight"].shape[0])
+            if "net.enc.layers.0.linear1.weight" in sd:
+                os.environ["TF_FF"] = str(sd["net.enc.layers.0.linear1.weight"].shape[0])
+            elif "net.enc.layers.0.moe.linear1.0.weight" in sd:          # mixture-of-experts feed-forward (GenIMUPoser)
+                os.environ["TF_FF"] = str(sd["net.enc.layers.0.moe.linear1.0.weight"].shape[0])
+                os.environ["GEN_MOE_E"] = str(len({k.split(".")[6] for k in sd if k.startswith("net.enc.layers.0.moe.linear1.")}))
         m = get_model(cfg); m.load_state_dict(sd, strict=False); return m.eval().to(dev)
     members = [build(n) for n in a.members.split(",")]
     if a.phys:
