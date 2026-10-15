@@ -181,6 +181,17 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-15 01:00 — mixture of experts, two readings.** (1) A learned gate over the three frozen leader members
+(72 per-joint weights, or a per-frame temporal gate on the IMU, fitted on participants 1-2 with the metric's own root-relative
+loss) improves the fitted split by 1-2 degrees (12.37 -> 10.5-11.4) and is slightly worse on the held-out participants (13.83 ->
+13.94-13.99): fifteen minutes of real data is enough to memorise, not to learn a transferable routing rule, so the uniform
+average stays. (A first version of this study fitted absolute global rotations and positions and got nonsense; the evaluator sets
+the root and the hand / foot joints to identity before scoring, so any loss used for selection must do the same.) (2) The LLM-style
+mixture, routed expert feed-forwards trained jointly from scratch (4 experts, top-2, load-balancing loss), is training at S60 for
+both the regression control and the shifted-time flow, against their dense references (16.72 / 15.89). With overlapping windows the
+120-epoch L flow alone scores 14.17 (14.64 with tiled windows), so it benefits from overlapping evaluation even more than the
+regression models. Also queued on request: 16 attention heads instead of 8 at S60 for both objectives.
+
 **Update 2026-10-14 18:30 — NEW ZERO-SHOT LEADER, 13.82 / 8.28 cm: the regression leader ensembled with the 120-epoch L
 flow model.** The 120-epoch L flow (`gen_flow_l60c_tlow_ctrl`, noise-end t) scores **14.64** at 8 Euler steps on its own, the best
 single checkpoint of any kind (the regression leader is an average of six checkpoints). Averaged in output space 50/50 with that
