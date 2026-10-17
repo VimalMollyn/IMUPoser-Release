@@ -20,6 +20,9 @@ def get_model(config=None, pretrained=None):
     elif model == "TokenIMUPoser":
         from imuposer.models.Transformers.TokenIMUPoser import TokenIMUPoser
         net = TokenIMUPoser(config=config)
+    elif model == "FlowTokenIMUPoser":
+        from imuposer.models.Transformers.TokenIMUPoser import FlowTokenIMUPoser
+        net = FlowTokenIMUPoser(config=config)
     elif model in ("FlowIMUPoser", "DiffusionV2IMUPoser", "RegressIMUPoser"):
         from imuposer.models.Transformers.GenIMUPoser import FlowIMUPoser, DiffusionV2IMUPoser, RegressIMUPoser
         net = {"FlowIMUPoser": FlowIMUPoser, "DiffusionV2IMUPoser": DiffusionV2IMUPoser, "RegressIMUPoser": RegressIMUPoser}[model](config=config)

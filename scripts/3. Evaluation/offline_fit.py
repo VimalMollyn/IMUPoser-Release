@@ -43,7 +43,7 @@ DEFAULT_MEMBERS = ["exp130_ftA_exp21_avatar_s1", "exp123_finetune_avatar", "exp1
 
 
 def _detect(sd):
-    if "gen_kind" in sd: return {0: "RegressIMUPoser", 1: "FlowIMUPoser", 2: "DiffusionV2IMUPoser", 3: "TokenIMUPoser"}[int(sd["gen_kind"])]
+    if "gen_kind" in sd: return {0: "RegressIMUPoser", 1: "FlowIMUPoser", 2: "DiffusionV2IMUPoser", 3: "TokenIMUPoser", 4: "FlowTokenIMUPoser"}[int(sd["gen_kind"])]
     if any(k.startswith("net.step_mlp.") for k in sd): return "DiffusionIMUPoser"
     if any(k.startswith("net.enc.") for k in sd): return "TransformerIMUPoser"
     if any(k.startswith("net.blocks.") for k in sd): return "CNN1DIMUPoser"
