@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-18 16:00 — XXL flow continued to 120 epochs: 15.26; flow does not scale past L.** The XXL flow (m = -2) continued
+60 more epochs on fig2 goes from 15.85 to **15.26 / 7.47 cm MPJPE** at 8 steps — the same ~0.6° the continuation buys, but it is the
+**worst** of the 120-epoch flow family, which now ranks L (14.64) < M (14.73) ≈ L m=-1 (14.74) < XL (14.83) < XXL (15.26). Bigger flow
+is worse here: the L flow at 25.6 M params beats every larger one, so flow saturates in both training length (past ~120 ep) and model
+size (past L). As an ensemble member XXL-120 does not help — it is both weaker and correlated with the other flows. The accuracy lever
+that is still open is **decorrelation**: the token and flow-token models (TokenHMR-latent targets, a different output space) now training
+on both GPUs. Best ensemble remains **13.83 report / 13.50 overall** (3 regression leaders + L120 + XL120 flow); the newer flow members
+have not broken that ~13.8 plateau.
+
 **Update 2026-10-15 18:00 — M flow continued to 120 epochs: 14.73, the second-best single model at 10 M params; the IMU → TokenHMR-token
 model is ready to train.** The M flow (m = -1) continued 60 more epochs on fig2 (fresh AdamW) goes from 15.72 to **14.73 / 7.29 cm MPJPE**
 at 8 steps, the same −1.0° the L flow gained from its continuation (15.74 → 14.64): training the flow models longer pays at both sizes,
