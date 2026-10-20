@@ -181,6 +181,17 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-20 18:30 — first token model (TokenHMR) scores 15.44 single, but does not break the ensemble plateau.**
+`gen_token_s60_ctrl` (S, d256, IMU → TokenHMR pose tokens, CE + soft-decode) finished 60 epochs at **SIP 15.44 / 7.49 cm**
+zero-shot — mid-pack as a single model (better than regression-S 16.53 and flow-S ~15.9, behind the 120-ep flows 14.6–14.8),
+but it is a **different output space** from every current member, so the test was whether it decorrelates. It does on the
+**selection split** — H + token-S = **12.07** vs H's 12.29 (−0.22), the first member to beat that baseline — **but the gain is
+selection-split overfit** (2 participants): on the **report split it is neutral-to-worse (13.88 vs 13.83)** and **overall a tie
+(13.49 vs 13.50)**. Leaner token combos were worse (leader+L120+TS 14.09 report, 3ldr+TS 14.11). So the ~13.8 plateau holds and
+token-S does not join the leader ensemble — the S-size token model is simply too weak. This is a reminder to trust the report
+split, not selection, for ensemble decisions. The remaining hope for decorrelation is the **larger token models** (L local, M/XL
+on fig2) and the flow-token ladder, all still training; a stronger token model may help where S does not.
+
 **Update 2026-10-18 16:00 — XXL flow continued to 120 epochs: 15.26; flow does not scale past L.** The XXL flow (m = -2) continued
 60 more epochs on fig2 goes from 15.85 to **15.26 / 7.47 cm MPJPE** at 8 steps — the same ~0.6° the continuation buys, but it is the
 **worst** of the 120-epoch flow family, which now ranks L (14.64) < M (14.73) ≈ L m=-1 (14.74) < XL (14.83) < XXL (15.26). Bigger flow
