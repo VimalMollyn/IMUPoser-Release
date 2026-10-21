@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-21 12:50 — token-M 16.44: token models do not scale (S beats M).** `gen_token_m60_ctrl` (M, d384, fig2)
+finished at **SIP 16.44 / 7.83 cm** zero-shot — a full degree *worse* than token-S (15.44), the opposite of the flow family
+where bigger helped up to L. So the TokenHMR-token recipe does not benefit from width at this range; the S model is the best
+token single so far. Not folded into the ensemble: it is weaker than token-S *and* the same output space (so correlated with
+it), and token-S already failed to help on the report split — a weaker correlated member of a family that did not help is not
+worth the cross-machine fetch (its checkpoint lives only on fig2). The token decorrelation bet now rests entirely on **token-L**
+(d512, stronger, training locally, due ~Oct 22); if it does not help either, the token approach is closed. Plateau holds at
+13.83 report / 13.50 overall.
+
 **Update 2026-10-20 18:30 — first token model (TokenHMR) scores 15.44 single, but does not break the ensemble plateau.**
 `gen_token_s60_ctrl` (S, d256, IMU → TokenHMR pose tokens, CE + soft-decode) finished 60 epochs at **SIP 15.44 / 7.49 cm**
 zero-shot — mid-pack as a single model (better than regression-S 16.53 and flow-S ~15.9, behind the 120-ep flows 14.6–14.8),
