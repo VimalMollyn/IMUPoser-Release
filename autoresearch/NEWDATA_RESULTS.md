@@ -181,6 +181,16 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-22 14:00 — flow-token (latent flow) also fails; both decorrelation bets closed, ensemble saturated.**
+`gen_flowtok_s60_ctrl` (S, FlowTokenIMUPoser = flow matching in the TokenHMR *latent* space) finished at **SIP ~20 zero-shot
+on p3-10** (base auto-eval 20.78 / jitter 3434; the standard offline_fit harness AGREES at 20.29 report / 19.26 overall — not
+a jitter artifact, the model is genuinely weak, and it overfits the 2-participant selection split badly: 15.54 sel → 20.29
+report). 8 sampling steps is best; more steps slightly worse. Folded into the H ensemble it **hurts both headline splits**
+(H+flowtokS 14.18 report / 13.71 overall vs 13.83 / 13.50) — past the pre-set >16.7 cancel threshold. **Cancelled** flow-token-L
+(was fresh at ep6 on GPU0); left flow-token-M to finish (ep52/96%, nearly free). With the discrete-token family already closed
+and latent-flow now closed, the two "decorrelate via a different output space" bets are both exhausted: **the ensemble is
+saturated at 13.83 report / 13.50 overall**, which stands as the honest zero-shot headline. GPU0 freed for a new direction.
+
 **Update 2026-10-22 04:15 — token-L 16.22 closes the token bet: all three sizes fail the ensemble.** `gen_token_l60_ctrl`
 (L, d512, local; val loss stopped improving at ep 29) finished at **SIP 16.22 / 7.76 cm** zero-shot — so the token family
 ranks S (15.44) < L (16.22) < M (16.44), no scaling. Folded into the ensemble on the headline splits, **every token combo is
