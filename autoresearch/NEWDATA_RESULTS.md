@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-22 04:15 — token-L 16.22 closes the token bet: all three sizes fail the ensemble.** `gen_token_l60_ctrl`
+(L, d512, local; val loss stopped improving at ep 29) finished at **SIP 16.22 / 7.76 cm** zero-shot — so the token family
+ranks S (15.44) < L (16.22) < M (16.44), no scaling. Folded into the ensemble on the headline splits, **every token combo is
+worse than the H baseline**: H+token-L 13.98 report / 13.59 overall, H+token-S+token-L 14.02 / 13.59, 3ldr+both-tokens 14.26 /
+13.80 (baseline 13.83 / 13.50). All three sizes tested, alone and stacked, degrade the ensemble — the **TokenHMR discrete-token
+decorrelation bet is closed**. The remaining decorrelation mechanism is **flow-token** (flow matching in the TokenHMR *latent*
+space, a continuous target rather than discrete CE): flow-token S/M are finishing on GPU1 and flow-token-L (d512) was launched
+fresh on GPU0 to keep it busy. If flow-token also fails to help, the ensemble is genuinely saturated at 13.83 / 13.50.
+
 **Update 2026-10-21 12:50 — token-M 16.44: token models do not scale (S beats M).** `gen_token_m60_ctrl` (M, d384, fig2)
 finished at **SIP 16.44 / 7.83 cm** zero-shot — a full degree *worse* than token-S (15.44), the opposite of the flow family
 where bigger helped up to L. So the TokenHMR-token recipe does not benefit from width at this range; the S model is the best
