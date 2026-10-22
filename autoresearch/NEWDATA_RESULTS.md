@@ -193,7 +193,7 @@ saturated at 13.83 report / 13.50 overall**, which stands as the honest zero-sho
 
 **Update 2026-10-22 04:15 — token-L 16.22 closes the token bet: all three sizes fail the ensemble.** `gen_token_l60_ctrl`
 (L, d512, local; val loss stopped improving at ep 29) finished at **SIP 16.22 / 7.76 cm** zero-shot — so the token family
-ranks S (15.44) < L (16.22) < M (16.44), no scaling. Folded into the ensemble on the headline splits, **every token combo is
+ranks S (15.44) < L (16.22) < M (16.44) < XL (16.54, fig2), no scaling (XL is the worst, confirming the trend). Folded into the ensemble on the headline splits, **every token combo is
 worse than the H baseline**: H+token-L 13.98 report / 13.59 overall, H+token-S+token-L 14.02 / 13.59, 3ldr+both-tokens 14.26 /
 13.80 (baseline 13.83 / 13.50). All three sizes tested, alone and stacked, degrade the ensemble — the **TokenHMR discrete-token
 decorrelation bet is closed**. The remaining decorrelation mechanism is **flow-token** (flow matching in the TokenHMR *latent*
