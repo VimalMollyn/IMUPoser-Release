@@ -181,6 +181,15 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-23 — flow-token-M (last latent-flow point) scores 18.86 / 17.99; family closed with data.** `gen_flowtok_m60_ctrl`
+(M, d384/L6) finished at epoch 54 and scores **SIP 18.86 report / 17.99 overall** zero-shot via the standard offline_fit harness
+(stride 31, 8 steps; base auto-eval 19.54, jitter 3261 vs GT 57 — the same jitter pathology as flow-token-S). This is a mild
+improvement over flow-token-S (20.29 → 18.86 report, ≈ −1.4°), so latent-flow *does* scale a little with model size — unlike the
+plain token family, which got worse — but it is still ~5° above the regression/flow leaders (~14°) and well past the 16.7° cancel
+line. **Not folded into the ensemble.** With S and M both measured and L/XL abandoned, the flow-token (latent-flow) bet is now
+fully closed with data; the ensemble standing is unchanged at **13.83 report / 13.50 overall**. The XXL snapshot-averaging
+regression leader (GPU 0) remains the only live shot at the plateau.
+
 **Update 2026-10-22 14:00 — flow-token (latent flow) also fails; both decorrelation bets closed, ensemble saturated.**
 `gen_flowtok_s60_ctrl` (S, FlowTokenIMUPoser = flow matching in the TokenHMR *latent* space) finished at **SIP ~20 zero-shot
 on p3-10** (base auto-eval 20.78 / jitter 3434; the standard offline_fit harness AGREES at 20.29 report / 19.26 overall — not
