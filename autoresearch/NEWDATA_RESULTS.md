@@ -181,6 +181,17 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-24 — XXL "bigger leader" at 60 ep underperforms (15.90 single, hurts the ensemble); undertrained, 120-ep continuation launched.**
+The XXL snapshot-averaging leader (seed 1, d1024/L8/FF4096, ~156 M, control 267 h, 60 ep; avg of snap10/20/30 + top-3
+ep31/48/50) scores **SIP 15.90 report / 15.44 overall** zero-shot (stride 31, jitter 164 — clean, well-behaved). That is
+**worse than the L single floor (14.26 report)**, and there is a clear **anti-scaling trend at fixed 60 ep**: L 14.26 < XL ~14.68
+< XXL 15.90. Folded into the H ensemble it also **hurts** (H+XXL 14.06 report / 13.71 overall vs H 13.83 / 13.50; H reproduced
+exactly as a sanity check). Diagnosis: a 156 M model is **undertrained** at 60 ep on 267 h — the same reason the L leader's 120-ep
+variant beat its 60-ep one. Per the standing directive (favor longer training, compute is free), launched a **120-ep continuation**
+(`scale_xxl60c_ctrl_snap`, a second warmup+cosine cycle warm-started from seed-1's ep31, own snapshots ep10–50) on GPU 0 as the
+longer-training fix; a second XXL seed keeps running on GPU 1. Standing headline unchanged at **13.83 report / 13.50 overall**
+pending the 120-ep result.
+
 **Update 2026-10-23 — flow-token-M (last latent-flow point) scores 18.86 / 17.99; family closed with data.** `gen_flowtok_m60_ctrl`
 (M, d384/L6) finished at epoch 54 and scores **SIP 18.86 report / 17.99 overall** zero-shot via the standard offline_fit harness
 (stride 31, 8 steps; base auto-eval 19.54, jitter 3261 vs GT 57 — the same jitter pathology as flow-token-S). This is a mild
