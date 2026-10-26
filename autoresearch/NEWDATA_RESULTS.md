@@ -181,6 +181,18 @@ deliverable 17.32); the 7-member set without dlall_l20 reads 15.47 and the 3-mod
 they did at L; zero-shot 18.37 / averaged 18.17. The fval-selected ensemble with it is now 9 members = **15.44**
 (fval 12.65); the two XL data-recipe models alone reach 15.55 and the data-diverse 5 + both XL 15.44.
 
+**Update 2026-10-26 — XXL "bigger leader" bet CONFIRMED DEAD: 120 ep is WORSE than 60 ep (16.14 vs 15.90). It's data capacity, not undertraining.**
+The XXL 120-ep continuation (seed 1: 60 ep + a second warm-started cosine cycle; snapshot-avg snap10/20/30 + top-3)
+scores **SIP 16.14 report / 15.65 overall** zero-shot — *worse* than XXL-60 (15.90 / 15.44), even though its synthetic
+(AMASS/Nymeria) val loss **improved** (0.03227 → 0.03187). That divergence — lower synthetic val, worse zero-shot on the
+real IMUPoser IMUs — is textbook **overfitting**, which **refutes the undertraining hypothesis**: the problem is **data
+capacity**, i.e. 267 h of mostly-synthetic data is too little to train a 156 M leader without overfitting the synthetic→real
+gap. So the whole bigger-leader ladder is settled: **L 14.26 < XL ~14.68 < XXL-60 15.90 < XXL-120 16.14** — bigger is
+strictly worse here, and **L (25 M) is the sweet spot**. XXL not folded into the ensemble (it hurt at 60 ep already and is
+worse at 120); the second XXL seed's 120-ep continuation was **cancelled** (same recipe → same result, GPU freed). The
+ensemble headline stands at **13.83 report / 13.50 overall**. Next lever under test: a **context-window (MAX_SAMPLE_LEN)
+sweep** on the L model — 2.5 / 5 / 10 s, zero-shot — to see whether more or less temporal context helps (both GPUs).
+
 **Update 2026-10-24 — XXL "bigger leader" at 60 ep underperforms (15.90 single, hurts the ensemble); undertrained, 120-ep continuation launched.**
 The XXL snapshot-averaging leader (seed 1, d1024/L8/FF4096, ~156 M, control 267 h, 60 ep; avg of snap10/20/30 + top-3
 ep31/48/50) scores **SIP 15.90 report / 15.44 overall** zero-shot (stride 31, jitter 164 — clean, well-behaved). That is
