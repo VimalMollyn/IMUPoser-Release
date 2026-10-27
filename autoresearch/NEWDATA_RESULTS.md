@@ -602,3 +602,30 @@ the previous deliverable (17.32), no new training. The 3-member M60 + L60 + M20-
   invalidated the first treatment results. QC rule: under 0.2 % of frames with any sensor |acc| > 50 m/s².
 - Ensembles and stride-31 inference are reported separately from single-model numbers; all single-model
   comparisons use the original 125-frame tiling.
+
+## 7. Context-length (window) sweep — 2026-10-27
+
+Question (user): does more or less temporal context help? Controlled sweep over the training window
+(`MAX_SAMPLE_LEN`) with the eval window (`TF_EVAL_WINDOW`) matched; everything else identical — L model
+(d512/L8/FF2048, ~25M), control arm, seed 1, 60 ep, single best-epoch ckpt, zero-shot, stride = window/4.
+The model is length-agnostic (sinusoidal PE recomputed per T), so the same weights can be evaluated at any window.
+
+| Window | frames | report (test8) SIP | overall (all) SIP | best epoch |
+|--------|-------:|-------------------:|------------------:|-----------:|
+| **2.5 s** | 62  | **16.60** | **16.12** | 28 |
+| 5.0 s (baseline tiling) | 125 | 16.88 | 16.38 | 29 |
+| 10 s | 250 | 17.58 | 16.93 | 51 |
+
+**Finding: monotone on both splits — less context is better, more context is monotonically worse.** 2.5 s is
+the best window in the tested range; the default 5 s tiling was slightly suboptimal. This is the first knob that
+*improved* a single model after bigger models, discrete tokens, and latent flow all came back worse or dead.
+
+Honest confound: at fixed 60 ep a shorter window yields more non-overlapping tiles → more optimizer
+updates/epoch, and the 10 s run converged late (best ep 51) — i.e. partly undertrained. But 5 s (fewer updates
+than 2.5 s) also underperforms 2.5 s, and the trend is monotone, so the data favour shorter context regardless
+of update count. We did not spend a 10 s / 120 ep run to fully separate the two: 10 s is the worst point and not
+a leader candidate (user's follow-up rule was "undertrained *but promising*").
+
+Follow-up in flight: two 2.5 s **leaders** (early-SWA recipe snap 10/20/30 + top-3, seeds 1 & 2) to test whether
+the winning window lowers the 14.26 single-model floor and helps ensemble H (single-ckpt 16.60 vs the 14.26
+SWA leader is the recipe gap, not the window; the window comparison above is apples-to-apples single-ckpt).
