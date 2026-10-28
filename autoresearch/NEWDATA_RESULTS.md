@@ -605,27 +605,66 @@ the previous deliverable (17.32), no new training. The 3-member M60 + L60 + M20-
 
 ## 7. Context-length (window) sweep — 2026-10-27
 
-Question (user): does more or less temporal context help? Controlled sweep over the training window
-(`MAX_SAMPLE_LEN`) with the eval window (`TF_EVAL_WINDOW`) matched; everything else identical — L model
-(d512/L8/FF2048, ~25M), control arm, seed 1, 60 ep, single best-epoch ckpt, zero-shot, stride = window/4.
-The model is length-agnostic (sinusoidal PE recomputed per T), so the same weights can be evaluated at any window.
+Question (user): does more or less temporal context help? Two distinct knobs turned out to be tangled here and
+had to be separated: the **training** window (`MAX_SAMPLE_LEN`) and the **eval** window (`TF_EVAL_WINDOW`). The
+model is length-agnostic (sinusoidal PE recomputed per T), so the same weights run at any eval window.
 
-| Window | frames | report (test8) SIP | overall (all) SIP | best epoch |
-|--------|-------:|-------------------:|------------------:|-----------:|
-| **2.5 s** | 62  | **16.60** | **16.12** | 28 |
-| 5.0 s (baseline tiling) | 125 | 16.88 | 16.38 | 29 |
-| 10 s | 250 | 17.58 | 16.93 | 51 |
+### 7a. The naive (native-window) sweep — and why its headline was WRONG
 
-**Finding: monotone on both splits — less context is better, more context is monotonically worse.** 2.5 s is
-the best window in the tested range; the default 5 s tiling was slightly suboptimal. This is the first knob that
-*improved* a single model after bigger models, discrete tokens, and latent flow all came back worse or dead.
+First pass: train at window W, evaluate at the *same* W (L model d512/L8/FF2048, control, seed1, 60 ep, single
+ckpt, stride = W/4):
 
-Honest confound: at fixed 60 ep a shorter window yields more non-overlapping tiles → more optimizer
-updates/epoch, and the 10 s run converged late (best ep 51) — i.e. partly undertrained. But 5 s (fewer updates
-than 2.5 s) also underperforms 2.5 s, and the trend is monotone, so the data favour shorter context regardless
-of update count. We did not spend a 10 s / 120 ep run to fully separate the two: 10 s is the worst point and not
-a leader candidate (user's follow-up rule was "undertrained *but promising*").
+| native window | report (test8) | overall (all) |
+|--------|-------:|------:|
+| 2.5 s (62 f) | 16.60 | 16.12 |
+| 5.0 s (125 f) | 16.88 | 16.38 |
+| 10 s (250 f) | 17.58 | 16.93 |
 
-Follow-up in flight: two 2.5 s **leaders** (early-SWA recipe snap 10/20/30 + top-3, seeds 1 & 2) to test whether
-the winning window lowers the 14.26 single-model floor and helps ensemble H (single-ckpt 16.60 vs the 14.26
-SWA leader is the recipe gap, not the window; the window comparison above is apples-to-apples single-ckpt).
+This *looked* monotone ("less context is better") and was first committed as such (commit `9d4b5a4`).
+**That headline is RETRACTED** — it conflated the training and eval windows, because each model was scored at
+its own native (= short, for the 2.5 s run) eval window.
+
+### 7b. Decomposition (single ckpt, same-day data, matched eval window)
+
+Cross-evaluating the *same-day* runs (no data-vintage confound) at matched windows:
+
+| train ↓ / eval → | eval 62 f | eval 125 f |
+|---|---:|---:|
+| 2.5 s-trained | 16.60 / 16.12 | 18.71 / 18.06 |
+| 5.0 s-trained | **16.39 / 15.97** | 16.88 / 16.38 |
+
+- **Training window: shorter does NOT help.** At the *same* eval window (62 f) the 5 s-trained model (16.39)
+  beats the 2.5 s-trained one (16.60). A model must also be scored near its training length (2.5 s-trained at
+  125 f collapses to 18.71). So "train on less context" is a loss, consistent with L/5 s being the sweet spot.
+- **Eval window: there is a real U-shaped effect** — for a fixed model, scoring at ~62–93 f beats 125 f on
+  test8/overall (5 s SWA leader: 125→14.40, 93→14.18, **62→14.13**, 47→14.19, 31→14.23 report).
+
+### 7c. The eval-window gain does NOT survive model selection (the important caveat)
+
+Tempting result: re-score the fixed **ensemble H** (same 5 checkpoints, inference only) at a shorter window.
+
+| ensemble H eval | sel (p1-2) | report/test8 (p3-10) | overall (p1-10) |
+|---|---:|---:|---:|
+| win 125 / s31 (default) | **12.29** | 13.83 | 13.50 |
+| win 93 / s23 | 12.59 | **13.53** | 13.33 |
+| win 93 / s8 | 12.57 | 13.51 | **13.31** |
+| win 62 / s15 | 12.80 | 13.53 | 13.37 |
+| win 47 / s12 | 13.22 | 13.70 | 13.60 |
+| win 31 / s8 | — | 13.99 | 13.88 |
+
+The win-125 row reproduces the standing 13.83/13.50 **exactly**. test8 and overall have a U-min at ~93 f
+(13.83→13.53 report) — *but the selection split (p1-2) is monotone the OTHER way* (125 best = 12.29, every
+shorter window worse). **The window preference reverses between participant groups.** Under the correct
+protocol (pick the eval window on the selection split, report on test8) the choice is **win 125 → test8 = 13.83**.
+The short-window "–0.30 free gain" is a **test-selection artifact**: it only appears if you choose the window by
+peeking at the decider split. **Ensemble headline is UNCHANGED at 13.83 / 13.50.**
+
+### 7d. Net
+
+- Context length is not a free accuracy lever. Training on less context hurts; evaluating on less context helps
+  the test participants but hurts the 2 selection participants, so it is not selectable a priori.
+- The real, systematic eval-window effect on p3-10 (clean U-curve) is a genuine participant-heterogeneity
+  observation and a candidate for a future **participant-level cross-validated** selection (vs the current
+  2-person sel set), which could legitimise a small inference-time gain. Not claimed here.
+- Dominated follow-ups were stopped: the sub-2.5 s *training* chain (1.25/0.6/0.3 s) was killed once 7b showed
+  shorter training is a loss; the 2.5 s-leader seed-2 was stopped to free a GPU for this analysis.
